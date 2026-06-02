@@ -8,7 +8,7 @@
 // Lấy khóa miễn phí: https://aistudio.google.com -> "Get API key".
 
 // Flash-Lite: hạn mức miễn phí cao nhất. Muốn dịch tốt hơn đổi "gemini-2.5-flash".
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-2.5-flash-lite";
 
 const SYS = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
 Return ONLY valid JSON (no markdown, no preamble) with this shape:
