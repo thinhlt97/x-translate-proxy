@@ -1,14 +1,12 @@
-// api/translate.js — Vercel Serverless Function dùng GEMINI (chạy mặc định ở Mỹ, iad1).
+// api/translate.js — Vercel Serverless Function (chạy mặc định ở Mỹ, iad1).
 //
-// Vì sao đặt ở Vercel:
-//  - Cloudflare Worker hay chạy qua Hong Kong -> Gemini chặn ("User location is not supported").
-//  - Vercel mặc định chạy hàm ở Washington D.C. (Mỹ), vùng Gemini phục vụ -> hết lỗi.
+// Vì sao đặt ở Vercel thay vì Cloudflare Worker:
+//  - Cloudflare Worker hay chạy qua Hong Kong -> Anthropic/Gemini chặn theo vùng.
+//  - Vercel mặc định chạy hàm ở Washington D.C. (Mỹ), là vùng được Anthropic phục vụ.
 //
-// Khóa GEMINI_API_KEY đặt trong Environment Variables của Vercel (không nằm trong code).
-// Lấy khóa miễn phí: https://aistudio.google.com -> "Get API key".
+// Khóa ANTHROPIC_API_KEY đặt trong phần Environment Variables của Vercel (không nằm trong code).
 
-// Flash-Lite: hạn mức miễn phí cao nhất. Muốn dịch tốt hơn đổi "gemini-2.5-flash".
-const MODEL = "gemini-2.5-flash-lite";
+const MODEL = "claude-haiku-4-5-20251001"; // rẻ; muốn tốt hơn đổi "claude-sonnet-4-6"
 
 const SYS = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
 Return ONLY valid JSON (no markdown, no preamble) with this shape:
@@ -43,35 +41,30 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Đoạn quá dài (tối đa 2000 ký tự)." });
     }
 
-    const url =
-      "https://generativelanguage.googleapis.com/v1beta/models/" +
-      MODEL + ":generateContent";
-
-    const upstream = await fetch(url, {
+    const upstream = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": process.env.GEMINI_API_KEY,
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYS }] },
-        contents: [{ role: "user", parts: [{ text }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 4096,
-          temperature: 0.3,
-        },
+        model: MODEL,
+        max_tokens: 1500,
+        system: SYS,
+        messages: [{ role: "user", content: text }],
       }),
     });
 
     if (!upstream.ok) {
       const detail = await upstream.text();
-      return res.status(502).json({ error: "Gemini " + upstream.status + ": " + detail.slice(0, 400) });
+      return res.status(502).json({ error: "Claude " + upstream.status + ": " + detail.slice(0, 400) });
     }
 
     const data = await upstream.json();
-    const raw = (data.candidates?.[0]?.content?.parts || [])
-      .map((p) => p.text || "")
+    const raw = (data.content || [])
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
       .join("\n")
       .replace(/```json|```/g, "")
       .trim();
@@ -80,7 +73,7 @@ export default async function handler(req, res) {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return res.status(502).json({ error: "Không phân tích được JSON từ Gemini", raw });
+      return res.status(502).json({ error: "Không phân tích được JSON từ Claude", raw });
     }
     return res.status(200).json(parsed);
   } catch (e) {
