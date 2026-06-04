@@ -1,12 +1,15 @@
-// api/translate.js — Vercel Serverless Function (chạy mặc định ở Mỹ, iad1).
+// api/translate.js — Vercel Serverless Function dùng GROQ (miễn phí, không cần thẻ).
 //
-// Vì sao đặt ở Vercel thay vì Cloudflare Worker:
-//  - Cloudflare Worker hay chạy qua Hong Kong -> Anthropic/Gemini chặn theo vùng.
-//  - Vercel mặc định chạy hàm ở Washington D.C. (Mỹ), là vùng được Anthropic phục vụ.
+// Vì sao Groq:
+//  - Miễn phí, không cần thẻ tín dụng, 30 lượt/phút, ~500K token/ngày.
+//  - Dùng API kiểu OpenAI nên gọi đơn giản. Model Llama 3.3 70B dịch đa ngôn ngữ tốt.
 //
-// Khóa ANTHROPIC_API_KEY đặt trong phần Environment Variables của Vercel (không nằm trong code).
+// Lấy khóa miễn phí: https://console.groq.com -> API Keys -> Create API Key (gsk_...).
+// Trên Vercel thêm biến môi trường GROQ_API_KEY, rồi Redeploy.
 
-const MODEL = "claude-haiku-4-5-20251001"; // rẻ; muốn tốt hơn đổi "claude-sonnet-4-6"
+// Model hiện hành của Groq. Nếu báo lỗi "model không tồn tại", xem danh sách mới ở
+// https://console.groq.com/docs/models rồi đổi tên cho khớp.
+const MODEL = "llama-3.3-70b-versatile";
 
 const SYS = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
 Return ONLY valid JSON (no markdown, no preamble) with this shape:
@@ -16,7 +19,6 @@ Split the tweet into sentences, keep English verbatim. Prioritise football jargo
 transfer-market terms (e.g. "over the line", "medical", "deadline day", "personal terms", "release clause").
 2-5 vocab items per sentence. Vietnamese must be fluent. Output JSON only.`;
 
-// Chỉ cho phép web app của bạn gọi (đỡ bị người lạ xài chùa khóa).
 const ALLOWED_ORIGINS = [
   "https://my-x-news.thinhlt1069-xnews.workers.dev",
   "http://localhost:8788",
@@ -41,31 +43,31 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Đoạn quá dài (tối đa 2000 ký tự)." });
     }
 
-    const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+    const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        "Authorization": "Bearer " + process.env.GROQ_API_KEY,
       },
       body: JSON.stringify({
         model: MODEL,
+        messages: [
+          { role: "system", content: SYS },
+          { role: "user", content: text },
+        ],
+        response_format: { type: "json_object" }, // ép trả JSON
+        temperature: 0.3,
         max_tokens: 1500,
-        system: SYS,
-        messages: [{ role: "user", content: text }],
       }),
     });
 
     if (!upstream.ok) {
       const detail = await upstream.text();
-      return res.status(502).json({ error: "Claude " + upstream.status + ": " + detail.slice(0, 400) });
+      return res.status(502).json({ error: "Groq " + upstream.status + ": " + detail.slice(0, 400) });
     }
 
     const data = await upstream.json();
-    const raw = (data.content || [])
-      .filter((c) => c.type === "text")
-      .map((c) => c.text)
-      .join("\n")
+    const raw = (data.choices?.[0]?.message?.content || "")
       .replace(/```json|```/g, "")
       .trim();
 
@@ -73,7 +75,7 @@ export default async function handler(req, res) {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return res.status(502).json({ error: "Không phân tích được JSON từ Claude", raw });
+      return res.status(502).json({ error: "Không phân tích được JSON từ Groq", raw });
     }
     return res.status(200).json(parsed);
   } catch (e) {
