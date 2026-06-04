@@ -12,10 +12,14 @@
 const MODEL = "llama-3.3-70b-versatile";
 
 const SYS = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
-Return ONLY valid JSON (no markdown, no preamble) with this shape:
-{"sentences":[{"en":"<English sentence verbatim>","vi":"<natural Vietnamese translation>",
-"vocab":[{"word":"<word/phrase>","pos":"<từ loại tiếng Việt>","meaning_vi":"<nghĩa>","note":"<ghi chú ngữ cảnh hoặc rỗng>"}]}]}
-Split the tweet into sentences, keep English verbatim. Prioritise football jargon, idioms, phrasal verbs,
+You will receive SEVERAL tweets, each marked "TWEET 1:", "TWEET 2:", etc.
+For EACH tweet, break it into sentences and translate.
+Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
+{"tweets":[
+  {"sentences":[{"en":"<English sentence verbatim>","vi":"<natural Vietnamese translation>","vocab":[{"word":"<word/phrase>","pos":"<từ loại tiếng Việt>","meaning_vi":"<nghĩa>","note":"<ghi chú ngữ cảnh hoặc rỗng>"}]}]}
+]}
+The "tweets" array MUST have exactly one entry per input tweet, in the SAME order as the input.
+Keep each English sentence verbatim. Prioritise football jargon, idioms, phrasal verbs,
 transfer-market terms (e.g. "over the line", "medical", "deadline day", "personal terms", "release clause").
 2-5 vocab items per sentence. Vietnamese must be fluent. Output JSON only.`;
 
@@ -35,13 +39,27 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Chỉ nhận POST" });
 
   try {
-    const text = req.body && req.body.text;
-    if (!text || typeof text !== "string") {
-      return res.status(400).json({ error: "Thiếu trường 'text'." });
+    // Nhận mảng tweets (gộp nhiều bài). Vẫn chấp nhận {text} đơn lẻ cho tương thích.
+    let tweets = req.body && req.body.tweets;
+    if (!Array.isArray(tweets)) {
+      const single = req.body && req.body.text;
+      tweets = (single && typeof single === "string") ? [single] : null;
     }
-    if (text.length > 2000) {
-      return res.status(400).json({ error: "Đoạn quá dài (tối đa 2000 ký tự)." });
+    if (!tweets || !tweets.length) {
+      return res.status(400).json({ error: "Thiếu 'tweets' (mảng) hoặc 'text'." });
     }
+    if (tweets.length > 12) {
+      return res.status(400).json({ error: "Tối đa 12 tweet mỗi lần." });
+    }
+    const totalLen = tweets.join("").length;
+    if (totalLen > 8000) {
+      return res.status(400).json({ error: "Tổng nội dung quá dài (tối đa 8000 ký tự)." });
+    }
+
+    // Đánh số từng tweet để model trả kết quả đúng thứ tự
+    const userMsg = tweets
+      .map((t, i) => `TWEET ${i + 1}:\n${t}`)
+      .join("\n\n");
 
     const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -53,11 +71,11 @@ export default async function handler(req, res) {
         model: MODEL,
         messages: [
           { role: "system", content: SYS },
-          { role: "user", content: text },
+          { role: "user", content: userMsg },
         ],
         response_format: { type: "json_object" }, // ép trả JSON
         temperature: 0.3,
-        max_tokens: 1500,
+        max_tokens: 6000,   // đủ chỗ cho nhiều tweet trong một lần
       }),
     });
 
@@ -77,7 +95,10 @@ export default async function handler(req, res) {
     } catch {
       return res.status(502).json({ error: "Không phân tích được JSON từ Groq", raw });
     }
-    return res.status(200).json(parsed);
+    // Luôn trả về dạng { tweets: [...] }
+    const arr = Array.isArray(parsed.tweets) ? parsed.tweets
+              : (Array.isArray(parsed.sentences) ? [{ sentences: parsed.sentences }] : []);
+    return res.status(200).json({ tweets: arr });
   } catch (e) {
     return res.status(502).json({ error: "Proxy lỗi: " + (e && e.message ? e.message : String(e)) });
   }
