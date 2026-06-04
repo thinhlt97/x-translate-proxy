@@ -75,7 +75,9 @@ export default async function handler(req, res) {
         ],
         response_format: { type: "json_object" }, // ép trả JSON
         temperature: 0.3,
-        max_tokens: 6000,   // đủ chỗ cho nhiều tweet trong một lần
+        // Groq tính cả max_tokens vào hạn mức TPM, nên đặt vừa đủ cho 1 batch ngắn,
+        // tránh "đốt" hạn mức. Tin bóng đá ngắn nên 3500 là dư.
+        max_tokens: 3500,
       }),
     });
 
