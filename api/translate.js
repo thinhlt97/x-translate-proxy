@@ -1,14 +1,15 @@
-// api/translate.js — Vercel Serverless Function dùng GEMINI, CÓ gộp nhiều tweet/lần.
+// api/translate.js — Vercel Serverless Function dùng GROQ (miễn phí, không cần thẻ).
 //
-// Đặt ở Vercel (vùng Mỹ) để tránh lỗi chặn vùng của Gemini.
-// Nhận {tweets: [...]} từ web app, dịch tất cả trong MỘT lần gọi, trả {tweets: [...]}.
+// Vì sao Groq:
+//  - Miễn phí, không cần thẻ tín dụng, 30 lượt/phút, ~500K token/ngày.
+//  - Dùng API kiểu OpenAI nên gọi đơn giản. Model Llama 3.3 70B dịch đa ngôn ngữ tốt.
 //
-// Khóa GEMINI_API_KEY đặt trong Environment Variables của Vercel.
-// Lấy khóa miễn phí: https://aistudio.google.com -> "Get API key".
+// Lấy khóa miễn phí: https://console.groq.com -> API Keys -> Create API Key (gsk_...).
+// Trên Vercel thêm biến môi trường GROQ_API_KEY, rồi Redeploy.
 
-// gemini-2.5-flash: dịch tự nhiên hơn. Muốn hạn mức miễn phí cao hơn (đổi lấy chất
-// lượng thấp hơn chút) thì dùng "gemini-2.5-flash-lite".
-const MODEL = "gemini-2.5-flash";
+// Model hiện hành của Groq. Nếu báo lỗi "model không tồn tại", xem danh sách mới ở
+// https://console.groq.com/docs/models rồi đổi tên cho khớp.
+const MODEL = "llama-3.3-70b-versatile";
 
 const SYS = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
 You will receive SEVERAL tweets, each marked "TWEET 1:", "TWEET 2:", etc.
@@ -20,7 +21,7 @@ Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 The "tweets" array MUST have exactly one entry per input tweet, in the SAME order as the input.
 Keep each English sentence verbatim. Prioritise football jargon, idioms, phrasal verbs,
 transfer-market terms (e.g. "over the line", "medical", "deadline day", "personal terms", "release clause").
-2-5 vocab items per sentence. Vietnamese must be fluent and natural. Output JSON only.`;
+2-5 vocab items per sentence. Vietnamese must be fluent. Output JSON only.`;
 
 const ALLOWED_ORIGINS = [
   "https://my-x-news.thinhlt1069-xnews.workers.dev",
@@ -56,38 +57,37 @@ export default async function handler(req, res) {
     }
 
     // Đánh số từng tweet để model trả kết quả đúng thứ tự
-    const userMsg = tweets.map((t, i) => `TWEET ${i + 1}:\n${t}`).join("\n\n");
+    const userMsg = tweets
+      .map((t, i) => `TWEET ${i + 1}:\n${t}`)
+      .join("\n\n");
 
-    const url =
-      "https://generativelanguage.googleapis.com/v1beta/models/" +
-      MODEL + ":generateContent";
-
-    const upstream = await fetch(url, {
+    const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": process.env.GEMINI_API_KEY,
+        "Authorization": "Bearer " + process.env.GROQ_API_KEY,
       },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYS }] },
-        contents: [{ role: "user", parts: [{ text: userMsg }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 8192,   // đủ chỗ cho nhiều tweet + phần "suy nghĩ" của model
-          temperature: 0.3,
-        },
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYS },
+          { role: "user", content: userMsg },
+        ],
+        response_format: { type: "json_object" }, // ép trả JSON
+        temperature: 0.3,
+        // Groq tính cả max_tokens vào hạn mức TPM, nên đặt vừa đủ cho 1 batch ngắn,
+        // tránh "đốt" hạn mức. Tin bóng đá ngắn nên 3500 là dư.
+        max_tokens: 3500,
       }),
     });
 
     if (!upstream.ok) {
       const detail = await upstream.text();
-      return res.status(502).json({ error: "Gemini " + upstream.status + ": " + detail.slice(0, 400) });
+      return res.status(502).json({ error: "Groq " + upstream.status + ": " + detail.slice(0, 400) });
     }
 
     const data = await upstream.json();
-    const raw = (data.candidates?.[0]?.content?.parts || [])
-      .map((p) => p.text || "")
-      .join("\n")
+    const raw = (data.choices?.[0]?.message?.content || "")
       .replace(/```json|```/g, "")
       .trim();
 
@@ -95,7 +95,7 @@ export default async function handler(req, res) {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return res.status(502).json({ error: "Không phân tích được JSON từ Gemini", raw });
+      return res.status(502).json({ error: "Không phân tích được JSON từ Groq", raw });
     }
     // Luôn trả về dạng { tweets: [...] }
     const arr = Array.isArray(parsed.tweets) ? parsed.tweets
