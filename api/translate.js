@@ -49,6 +49,17 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
 
+    // ===== Chế độ KÉO TIN một nguồn =====
+    if (typeof body.source === "string") {
+      const handle = body.source.trim();
+      if (!/^[A-Za-z0-9_]{1,30}$/.test(handle)) {
+        return res.status(400).json({ error: "Tên kênh không hợp lệ." });
+      }
+      const tw = await fetchSource(handle);
+      if (tw.error) return res.status(502).json({ error: tw.error });
+      return res.status(200).json({ tweets: tw.tweets });
+    }
+
     // ===== Chế độ tạo đề ôn tập =====
     if (Array.isArray(body.quiz)) {
       if (!body.quiz.length) return res.status(400).json({ error: "Danh sách từ vựng rỗng." });
@@ -83,6 +94,41 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(502).json({ error: "Proxy lỗi: " + (e && e.message ? e.message : String(e)) });
   }
+}
+
+// Kéo tweet của một kênh từ twitterapi.io, lọc 24h, chỉ giữ text gốc.
+async function fetchSource(handle) {
+  const key = process.env.TWITTERAPI_KEY;
+  if (!key) return { error: "Chưa đặt TWITTERAPI_KEY trên Vercel." };
+  const url = "https://api.twitterapi.io/twitter/user/last_tweets?userName="
+            + encodeURIComponent(handle) + "&count=40";
+  const r = await fetch(url, { headers: { "x-api-key": key } });
+  if (!r.ok) {
+    const d = await r.text();
+    return { error: "twitterapi " + r.status + ": " + d.slice(0, 300) };
+  }
+  const payload = await r.json();
+  const raw = payload.tweets || payload?.data?.tweets || payload.data || [];
+  const since = Date.now() - 24 * 3600 * 1000;
+  const tweets = [];
+  for (const tw of raw) {
+    let text = tw.text || tw.full_text || "";
+    if (/^RT @/.test(text) || tw.retweeted_tweet) continue;      // bỏ retweet
+    if (tw.isReply || tw.inReplyToId) continue;                  // bỏ reply
+    const t = Date.parse(tw.createdAt || tw.created_at || "");
+    if (!isNaN(t) && t < since) continue;                        // chỉ 24h gần nhất
+    text = text.replace(/https:\/\/t\.co\/\w+/g, "").replace(/[ \t]+/g, " ").trim();
+    if (!text) continue;                                         // bỏ tweet chỉ có ảnh/video
+    let created = "";
+    if (!isNaN(t)) {
+      created = new Date(t).toLocaleString("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit",
+        hour: "2-digit", minute: "2-digit",
+      });
+    }
+    tweets.push({ text, created_at: created });
+  }
+  return { tweets };
 }
 
 // Gọi Groq, trả { json } hoặc { error }
