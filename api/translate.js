@@ -2,7 +2,7 @@
 // Mỗi yêu cầu dịch/tạo đề kèm trường "provider": "gemini" hoặc "groq".
 //
 // Chế độ:
-//   1) Kéo tin: body { source: "handle" }                              -> { tweets:[{text,created_at}] }
+//   1) Kéo tin: body { source: "handle" }                              -> { tweets:[{text,created_at,ts}] }  (ts: ms epoch|null)
 //   2) Dịch:    body { tweets:[...], provider:"gemini"|"groq" }         -> { tweets:[{sentences:[...]}] }
 //   3) Tạo đề:  body { quiz:[{word,...}], provider:"gemini"|"groq" }     -> { questions:[...] }
 //
@@ -161,7 +161,7 @@ async function fetchSource(handle) {
     let created = "";
     if (!isNaN(t)) created = new Date(t).toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    tweets.push({ text, created_at: created });
+    tweets.push({ text, created_at: created, ts: isNaN(t) ? null : t });   // ts: mốc thời gian (ms) để frontend lọc 6/12/24h
   }
   return { tweets };
 }
