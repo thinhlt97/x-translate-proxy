@@ -1,15 +1,22 @@
-// api/translate.js — Vercel Serverless Function: hỗ trợ CẢ Groq LẪN Gemini.
-// Mỗi yêu cầu dịch/tạo đề kèm trường "provider": "gemini" hoặc "groq".
+// api/translate.js — Vercel Serverless Function: hỗ trợ Gemini, Groq VÀ Claude.
+// Mỗi yêu cầu dịch/tạo đề kèm trường "provider":
+//   "gemini" | "groq" | "claude-haiku" | "claude-sonnet"
 //
 // Chế độ:
 //   1) Kéo tin: body { source: "handle" }                              -> { tweets:[{text,created_at,ts}] }  (ts: ms epoch|null)
-//   2) Dịch:    body { tweets:[...], provider:"gemini"|"groq" }         -> { tweets:[{sentences:[...]}] }
-//   3) Tạo đề:  body { quiz:[{word,...}], provider:"gemini"|"groq" }     -> { questions:[...] }
+//   2) Dịch:    body { tweets:[...], provider:<provider> }             -> { tweets:[{sentences:[...]}] }
+//   3) Tạo đề:  body { quiz:[{word,...}], provider:<provider> }         -> { questions:[...] }
 //
-// Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, TWITTERAPI_KEY.
+// Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY, TWITTERAPI_KEY.
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Map provider -> model Claude (model ID không thêm hậu tố ngày tháng).
+const CLAUDE_MODELS = {
+  "claude-haiku": "claude-haiku-4-5",
+  "claude-sonnet": "claude-sonnet-4-6",
+};
+const ALLOWED_PROVIDERS = ["gemini", "groq", "claude-haiku", "claude-sonnet"];
 
 const SYS_TRANSLATE = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
 You will receive SEVERAL tweets, each marked "TWEET 1:", "TWEET 2:", etc.
@@ -53,7 +60,7 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
-    const provider = body.provider === "groq" ? "groq" : "gemini";   // mặc định gemini
+    const provider = ALLOWED_PROVIDERS.includes(body.provider) ? body.provider : "gemini";   // mặc định gemini
 
     // ===== 1) KÉO TIN =====
     if (typeof body.source === "string") {
@@ -99,9 +106,42 @@ export default async function handler(req, res) {
 
 // Chọn nhà cung cấp
 async function callLLM(provider, system, user, maxTokens) {
-  return provider === "groq"
-    ? callGroq(system, user, maxTokens)
-    : callGemini(system, user, maxTokens);
+  if (provider === "groq") return callGroq(system, user, maxTokens);
+  if (CLAUDE_MODELS[provider]) return callAnthropic(system, user, maxTokens, CLAUDE_MODELS[provider]);
+  return callGemini(system, user, maxTokens);
+}
+
+// Tách JSON từ text trả về (Claude không có chế độ JSON cứng như Groq/Gemini).
+function extractJson(raw) {
+  const s = (raw || "").replace(/```json|```/g, "").trim();
+  try { return JSON.parse(s); } catch {}
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a >= 0 && b > a) { try { return JSON.parse(s.slice(a, b + 1)); } catch {} }
+  return null;
+}
+
+async function callAnthropic(system, user, maxTokens, model) {
+  if (!process.env.ANTHROPIC_API_KEY) return { error: "Chưa đặt ANTHROPIC_API_KEY trên Vercel." };
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: Math.min(maxTokens, 8192),
+      temperature: 0.4,
+      system,
+      messages: [{ role: "user", content: user }],
+    }),
+  });
+  if (!r.ok) { const d = await r.text(); return { error: "Claude " + r.status + ": " + d.slice(0, 400) }; }
+  const data = await r.json();
+  const raw = (data.content || []).filter((b) => b.type === "text").map((b) => b.text || "").join("\n");
+  const j = extractJson(raw);
+  return j ? { json: j } : { error: "Không phân tích được JSON từ Claude" };
 }
 
 async function callGemini(system, user, maxTokens) {
