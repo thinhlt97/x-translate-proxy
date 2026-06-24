@@ -16,7 +16,9 @@ const CLAUDE_MODELS = {
   "claude-haiku": "claude-haiku-4-5",
   "claude-sonnet": "claude-sonnet-4-6",
 };
-const ALLOWED_PROVIDERS = ["gemini", "groq", "claude-haiku", "claude-sonnet"];
+// "gemini"      = key trả phí (GEMINI_API_KEY)        -> nút "Gemini Pro"
+// "gemini-free" = key miễn phí (GEMINI_FREE_API_KEY)  -> nút "Gemini"
+const ALLOWED_PROVIDERS = ["gemini", "gemini-free", "groq", "claude-haiku", "claude-sonnet"];
 
 const SYS_TRANSLATE = `You are a bilingual English-Vietnamese teacher specialising in football/soccer news from X.
 You will receive SEVERAL tweets, each marked "TWEET 1:", "TWEET 2:", etc.
@@ -42,6 +44,15 @@ CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
 - Exactly one correct option. VARY the position of the correct answer (not always the same letter).
 Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":<0-3>}]}
 Output JSON only.`;
+
+const SYS_DEFINE = `You are an English-Vietnamese dictionary for a Vietnamese learner who follows football/soccer news.
+You receive ONE English word or short phrase. Explain it for the learner IN VIETNAMESE.
+Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
+{"word":"<the word/phrase, lowercased>","ipa":"<IPA in slashes, e.g. /ˈmedɪkl/>","senses":[
+  {"pos":"<từ loại tiếng Việt: danh từ / động từ / tính từ ...>","meaning_vi":"<nghĩa tiếng Việt, ngắn gọn, rõ>","example_en":"<one natural English example sentence>","example_vi":"<bản dịch tiếng Việt của câu ví dụ>"}
+]}
+Give 1-3 senses, most common first. If the word is common in football, add the football-specific sense.
+ALWAYS include "ipa". Vietnamese must be fluent and natural. Output JSON only.`;
 
 const ALLOWED_ORIGINS = [
   "https://my-x-news.thinhlt1069-xnews.workers.dev",
@@ -69,6 +80,20 @@ export default async function handler(req, res) {
       const tw = await fetchSource(handle);
       if (tw.error) return res.status(502).json({ error: tw.error });
       return res.status(200).json({ tweets: tw.tweets });
+    }
+
+    // ===== 4) TRA TỪ ĐIỂN (nghĩa tiếng Việt + ví dụ) =====
+    if (typeof body.define === "string") {
+      const word = body.define.trim().slice(0, 80);
+      if (!word) return res.status(400).json({ error: "Thiếu từ cần tra." });
+      const out = await callLLM(provider, SYS_DEFINE, "WORD: " + word, 1200);
+      if (out.error) return res.status(502).json({ error: out.error });
+      const j = out.json || {};
+      return res.status(200).json({
+        word: typeof j.word === "string" ? j.word : word,
+        ipa: typeof j.ipa === "string" ? j.ipa : "",
+        senses: Array.isArray(j.senses) ? j.senses : [],
+      });
     }
 
     // ===== 3) TẠO ĐỀ =====
@@ -108,7 +133,14 @@ export default async function handler(req, res) {
 async function callLLM(provider, system, user, maxTokens) {
   if (provider === "groq") return callGroq(system, user, maxTokens);
   if (CLAUDE_MODELS[provider]) return callAnthropic(system, user, maxTokens, CLAUDE_MODELS[provider]);
-  return callGemini(system, user, maxTokens);
+  if (provider === "gemini-free") {
+    const k = process.env.GEMINI_FREE_API_KEY;
+    if (!k) return { error: "Chưa đặt GEMINI_FREE_API_KEY trên Vercel." };
+    return callGemini(system, user, maxTokens, k);
+  }
+  // "gemini" mặc định = key trả phí
+  if (!process.env.GEMINI_API_KEY) return { error: "Chưa đặt GEMINI_API_KEY trên Vercel." };
+  return callGemini(system, user, maxTokens, process.env.GEMINI_API_KEY);
 }
 
 // Tách JSON từ text trả về (Claude không có chế độ JSON cứng như Groq/Gemini).
@@ -144,11 +176,11 @@ async function callAnthropic(system, user, maxTokens, model) {
   return j ? { json: j } : { error: "Không phân tích được JSON từ Claude" };
 }
 
-async function callGemini(system, user, maxTokens) {
+async function callGemini(system, user, maxTokens, apiKey) {
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent";
   const r = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey || process.env.GEMINI_API_KEY },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
