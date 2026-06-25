@@ -102,7 +102,7 @@ export default async function handler(req, res) {
       const wordList = body.quiz
         .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
         .join("\n");
-      const out = await callLLM(provider, SYS_QUIZ, "Study list:\n" + wordList, 4000);
+      const out = await callLLM(provider, SYS_QUIZ, "Study list:\n" + wordList, 6000);
       if (out.error) return res.status(502).json({ error: out.error });
       return res.status(200).json({ questions: Array.isArray(out.json.questions) ? out.json.questions : [] });
     }
@@ -184,13 +184,28 @@ async function callGemini(system, user, maxTokens, apiKey) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
-      generationConfig: { responseMimeType: "application/json", maxOutputTokens: maxTokens, temperature: 0.4 },
+      generationConfig: {
+        responseMimeType: "application/json",
+        maxOutputTokens: maxTokens,
+        temperature: 0.4,
+        // gemini-2.5-flash là "thinking model": mặc định ngốn output token để suy nghĩ
+        // trước khi in JSON -> dễ chạm MAX_TOKENS, JSON bị cắt cụt -> parse lỗi.
+        // Tắt thinking để dồn toàn bộ token cho JSON (nhanh + rẻ hơn).
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!r.ok) { const d = await r.text(); return { error: "Gemini " + r.status + ": " + d.slice(0, 400) }; }
   const data = await r.json();
-  const raw = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("\n").replace(/```json|```/g, "").trim();
-  try { return { json: JSON.parse(raw) }; } catch { return { error: "Không phân tích được JSON từ Gemini" }; }
+  const cand = data.candidates?.[0];
+  const raw = (cand?.content?.parts || []).map((p) => p.text || "").join("\n").replace(/```json|```/g, "").trim();
+  try {
+    return { json: JSON.parse(raw) };
+  } catch {
+    const reason = cand?.finishReason || "?";
+    const hint = reason === "MAX_TOKENS" ? " (output bị cắt vì hết token — thử lại hoặc giảm số từ)" : "";
+    return { error: "Không phân tích được JSON từ Gemini [" + reason + "]" + hint };
+  }
 }
 
 async function callGroq(system, user, maxTokens) {
