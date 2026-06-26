@@ -36,11 +36,19 @@ const SYS_QUIZ = `You create CHALLENGING English vocabulary quizzes for Vietname
 You receive a list of TARGET English words/phrases (the learner's study list) with their meanings.
 Create EXACTLY 10 multiple-choice questions. EVERYTHING in ENGLISH ONLY.
 
+VARIETY IS MANDATORY — do NOT make the quiz monotonous. The learner is bored of quizzes that are all fill-in-the-blank.
+Across the 10 questions you MUST use a MIX of the formats below. NO single format may be used for more than 3 of the 10 questions. Aim for roughly this spread:
+  (A) DEFINITION -> WORD (about 2): give an English definition/description, the 4 options are candidate words; pick the one that matches.
+  (B) FILL-IN-THE-BLANK (at most 2-3): a football sentence with a gap "____"; all 4 options fit grammatically but only one fits the meaning.
+  (C) CORRECT USAGE (about 2): ask e.g. 'Which sentence uses "X" correctly?' — give 4 full sentences, only ONE uses the target word X correctly (others misuse it: wrong meaning, wrong collocation, or wrong part of speech).
+  (D) CLOSEST IN MEANING (about 1-2): 'Which word/phrase is closest in meaning to "X"?' — 4 real words, one is the best synonym.
+  (E) ODD ONE OUT / WRONG USAGE (about 1-2): e.g. 'In which sentence is "X" used INCORRECTLY?' or 'Which option is NOT a correct synonym of "X"?'.
+When a question targets a specific study word, name it in quotes inside the question text (e.g. the word "strip").
+
 CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
-- All 4 options must be PLAUSIBLE and of the SAME kind (all real English words of the same part of speech, OR all full sentences). The learner must NOT be able to find the answer just by spotting "the only familiar word".
+- All 4 options must be PLAUSIBLE and of the SAME kind (all real English words of the same part of speech, OR all full grammatical sentences). The learner must NOT be able to find the answer just by spotting "the only familiar word" or "the only real word".
 - Use OTHER words from the study list as the wrong options whenever possible. If a question targets word X, use other study-list words — or close real synonyms / same football-domain terms — as the 3 distractors.
 - NEVER use nonsense or obviously unrelated filler as options.
-- Mix styles across the 10: (a) definition -> choose the word; (b) fill-in-the-blank football sentence where all 4 fit grammatically but only one fits the meaning; (c) closest synonym; (d) correct usage in context.
 - Exactly one correct option. VARY the position of the correct answer (not always the same letter).
 Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":<0-3>}]}
 Output JSON only.`;
