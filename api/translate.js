@@ -50,7 +50,13 @@ CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
 - Use OTHER words from the study list as the wrong options whenever possible. If a question targets word X, use other study-list words — or close real synonyms / same football-domain terms — as the 3 distractors.
 - NEVER use nonsense or obviously unrelated filler as options.
 - Exactly one correct option. VARY the position of the correct answer (not always the same letter).
-Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":<0-3>}]}
+
+For EACH question also provide, FOR THE VIETNAMESE LEARNER, written IN VIETNAMESE:
+- "vi": a natural Vietnamese translation of the question. Translate the question stem; if the question or the correct option is a full English sentence, translate that sentence too so the learner understands its meaning.
+- "explain": a short Vietnamese explanation of WHY the correct option is right — what the target word means here and, briefly, why the other options are wrong (wrong meaning / wrong usage / not a synonym). Keep it 1-3 sentences, concrete.
+(These two fields are the ONLY Vietnamese in the output; the question and all 4 options stay English-only.)
+
+Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":<0-3>,"vi":"<dịch tiếng Việt>","explain":"<giải thích tiếng Việt>"}]}
 Output JSON only.`;
 
 const SYS_DEFINE = `You are an English-Vietnamese dictionary for a Vietnamese learner who follows football/soccer news.
@@ -110,7 +116,7 @@ export default async function handler(req, res) {
       const wordList = body.quiz
         .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
         .join("\n");
-      const out = await callLLM(provider, SYS_QUIZ, "Study list:\n" + wordList, 6000);
+      const out = await callLLM(provider, SYS_QUIZ, "Study list:\n" + wordList, 8000);
       if (out.error) return res.status(502).json({ error: out.error });
       return res.status(200).json({ questions: Array.isArray(out.json.questions) ? out.json.questions : [] });
     }
