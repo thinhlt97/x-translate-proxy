@@ -7,11 +7,14 @@
 //   2) Dịch:    body { tweets:[...], provider:<provider> }             -> { tweets:[{sentences:[...]}] }
 //   3) Tạo đề:  body { quiz:[{word,...}], provider:<provider> }         -> { questions:[...] }
 //   5) Luyện nghe: body { listen:[{word,...}], provider:<provider> }    -> { title, transcript:[{speaker,text,vi}], questions:[...] }
+//   6) TTS nghe:  body { tts:[{speaker,text}] }                         -> { audio:<base64 PCM>, mime }  (Gemini TTS đa giọng)
 //
 // Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY, TWITTERAPI_KEY.
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
+const TTS_MODEL = "gemini-2.5-flash-preview-tts";   // model Gemini đọc thành tiếng (đa giọng)
+const TTS_VOICES = ["Puck", "Kore"];                // 2 giọng phân biệt cho 2 người trong hội thoại
 // Map provider -> model Claude (model ID không thêm hậu tố ngày tháng).
 const CLAUDE_MODELS = {
   "claude-haiku": "claude-haiku-4-5",
@@ -168,6 +171,17 @@ export default async function handler(req, res) {
       });
     }
 
+    // ===== 6) TTS LUYỆN NGHE (đọc hội thoại thành tiếng — audio thật để tua được) =====
+    if (Array.isArray(body.tts)) {
+      if (!body.tts.length) return res.status(400).json({ error: "Thiếu lời thoại để đọc." });
+      const total = body.tts.reduce((n, t) => n + (t && typeof t.text === "string" ? t.text.length : 0), 0);
+      if (!total) return res.status(400).json({ error: "Lời thoại rỗng." });
+      if (total > 3000) return res.status(400).json({ error: "Đoạn hội thoại quá dài để tạo audio." });
+      const out = await callGeminiTTS(body.tts);
+      if (out.error) return res.status(502).json({ error: out.error });
+      return res.status(200).json({ audio: out.audio, mime: out.mime });
+    }
+
     // ===== 2) DỊCH =====
     let tweets = body.tweets;
     if (!Array.isArray(tweets)) {
@@ -267,6 +281,38 @@ async function callGemini(system, user, maxTokens, apiKey) {
     const hint = reason === "MAX_TOKENS" ? " (output bị cắt vì hết token — thử lại hoặc giảm số từ)" : "";
     return { error: "Không phân tích được JSON từ Gemini [" + reason + "]" + hint };
   }
+}
+
+// Đọc hội thoại thành tiếng bằng Gemini TTS. Trả base64 PCM 16-bit (mime kèm sample rate).
+// Đa giọng: gán 2 speaker đầu tiên vào 2 giọng khác nhau (Gemini multi-speaker tối đa 2 người).
+async function callGeminiTTS(turns) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return { error: "Chưa đặt GEMINI_API_KEY trên Vercel." };
+  const speakers = [];
+  for (const t of turns) { const s = (t && t.speaker || "").trim(); if (s && !speakers.includes(s)) speakers.push(s); }
+  const text = "TTS the following conversation. Read each line naturally in a spoken style:\n"
+    + turns.map((t) => `${(t && t.speaker || "Speaker").trim()}: ${(t && t.text || "").trim()}`).join("\n");
+  let speechConfig;
+  if (speakers.length >= 2) {
+    speechConfig = { multiSpeakerVoiceConfig: { speakerVoiceConfigs: speakers.slice(0, 2).map((s, i) => ({
+      speaker: s, voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICES[i] || TTS_VOICES[0] } } })) } };
+  } else {
+    speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICES[0] } } };
+  }
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + TTS_MODEL + ":generateContent";
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: { responseModalities: ["AUDIO"], speechConfig },
+    }),
+  });
+  if (!r.ok) { const d = await r.text(); return { error: "Gemini TTS " + r.status + ": " + d.slice(0, 400) }; }
+  const data = await r.json();
+  const part = (data.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
+  if (!part) return { error: "Gemini TTS không trả audio" };
+  return { audio: part.inlineData.data, mime: part.inlineData.mimeType || "audio/L16;codec=pcm;rate=24000" };
 }
 
 async function callGroq(system, user, maxTokens) {
