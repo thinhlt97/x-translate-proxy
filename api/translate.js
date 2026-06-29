@@ -6,6 +6,7 @@
 //   1) Kéo tin: body { source: "handle" }                              -> { tweets:[{text,created_at,ts}] }  (ts: ms epoch|null)
 //   2) Dịch:    body { tweets:[...], provider:<provider> }             -> { tweets:[{sentences:[...]}] }
 //   3) Tạo đề:  body { quiz:[{word,...}], provider:<provider> }         -> { questions:[...] }
+//   5) Luyện nghe: body { listen:[{word,...}], provider:<provider> }    -> { title, transcript:[{speaker,text,vi}], questions:[...] }
 //
 // Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY, TWITTERAPI_KEY.
 
@@ -57,6 +58,36 @@ For EACH question also provide, FOR THE VIETNAMESE LEARNER, written IN VIETNAMES
 (These two fields are the ONLY Vietnamese in the output; the question and all 4 options stay English-only.)
 
 Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":<0-3>,"vi":"<dịch tiếng Việt>","explain":"<giải thích tiếng Việt>"}]}
+Output JSON only.`;
+
+const SYS_LISTEN = `You design IELTS-style LISTENING practice for a Vietnamese learner.
+You receive a list of TARGET English words/phrases (the learner's study list).
+Produce: (1) ONE natural spoken DIALOGUE, and (2) IELTS-style questions about it.
+
+DIALOGUE rules:
+- A natural conversation between EXACTLY TWO named speakers (e.g. "Tom" and "Anna"), like IELTS Listening Section 1 (everyday/social) or Section 3 (a study/work discussion).
+- About 150-230 words total, split into short alternating turns. Realistic, flowing spoken English (contractions, follow-up questions, small reactions).
+- Weave in EVERY word from the study list naturally — the words may appear anywhere in any turn, in any grammatical form. Do NOT force them awkwardly or list them.
+- The dialogue is meant to be HEARD (text-to-speech), so keep sentences speakable.
+
+QUESTION rules — create 6-8 questions, ALL in ENGLISH, that test comprehension of what was SAID:
+- MIX two types, at least 2 of each:
+  (mc)   multiple choice with EXACTLY 3 options A/B/C, exactly one correct, plausible distractors based on the dialogue.
+  (fill) completion: a sentence with a "____" gap that the learner fills from what they heard. The answer MUST be the EXACT word(s) spoken in the transcript so it can be auto-graded. Keep answers short (1-3 words), IELTS-style.
+- Questions must be answerable ONLY by listening (do not require reading the transcript). Spread answers across the dialogue, not all from one line.
+
+For EACH question, ALSO provide (for the Vietnamese learner):
+- "vi": natural Vietnamese translation of the question.
+- "explain": short Vietnamese explanation of why the answer is correct (1-2 sentences).
+- "evidence": the exact sentence/turn from the transcript that proves the answer.
+
+Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
+{"title":"<short English scenario title>",
+ "transcript":[{"speaker":"<name>","text":"<the spoken line, verbatim>","vi":"<natural Vietnamese translation>"}],
+ "questions":[
+   {"type":"mc","q":"<question>","options":["<A>","<B>","<C>"],"correct":<0-2>,"vi":"<dịch>","explain":"<giải thích tiếng Việt>","evidence":"<câu gốc trong transcript>"},
+   {"type":"fill","q":"<sentence with ____ gap>","answer":"<exact word(s) from transcript>","accept":["<acceptable variant>"],"limit":"<e.g. ONE WORD / NO MORE THAN TWO WORDS>","vi":"<dịch>","explain":"<giải thích tiếng Việt>","evidence":"<câu gốc trong transcript>"}
+ ]}
 Output JSON only.`;
 
 const SYS_DEFINE = `You are an English-Vietnamese dictionary for a Vietnamese learner who follows football/soccer news.
@@ -119,6 +150,22 @@ export default async function handler(req, res) {
       const out = await callLLM(provider, SYS_QUIZ, "Study list:\n" + wordList, 8000);
       if (out.error) return res.status(502).json({ error: out.error });
       return res.status(200).json({ questions: Array.isArray(out.json.questions) ? out.json.questions : [] });
+    }
+
+    // ===== 5) LUYỆN NGHE (tạo hội thoại + câu hỏi kiểu IELTS) =====
+    if (Array.isArray(body.listen)) {
+      if (!body.listen.length) return res.status(400).json({ error: "Danh sách từ vựng rỗng." });
+      const wordList = body.listen
+        .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
+        .join("\n");
+      const out = await callLLM(provider, SYS_LISTEN, "Study words:\n" + wordList, 6000);
+      if (out.error) return res.status(502).json({ error: out.error });
+      const j = out.json || {};
+      return res.status(200).json({
+        title: typeof j.title === "string" ? j.title : "",
+        transcript: Array.isArray(j.transcript) ? j.transcript : [],
+        questions: Array.isArray(j.questions) ? j.questions : [],
+      });
     }
 
     // ===== 2) DỊCH =====
