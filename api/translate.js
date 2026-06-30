@@ -69,15 +69,16 @@ Produce: (1) ONE natural spoken DIALOGUE, and (2) IELTS-style questions about it
 
 DIALOGUE rules:
 - A natural conversation between EXACTLY TWO named speakers (e.g. "Tom" and "Anna"), like IELTS Listening Section 1 (everyday/social) or Section 3 (a study/work discussion).
-- About 150-230 words total, split into short alternating turns. Realistic, flowing spoken English (contractions, follow-up questions, small reactions).
+- About 260-360 words total, split into short alternating turns. Realistic, flowing spoken English (contractions, follow-up questions, small reactions, mild digressions). Long enough to support 8-10 spread-out questions.
 - Weave in EVERY word from the study list naturally — the words may appear anywhere in any turn, in any grammatical form. Do NOT force them awkwardly or list them.
 - The dialogue is meant to be HEARD (text-to-speech), so keep sentences speakable.
 
-QUESTION rules — create 6-8 questions, ALL in ENGLISH, that test comprehension of what was SAID:
+QUESTION rules — create 8-10 questions, ALL in ENGLISH, that test comprehension of MEANING (not word-spotting):
+- CRITICAL — PARAPHRASE like real IELTS: the question stem must NOT reuse the wording of the transcript. Re-express the idea with SYNONYMS and different grammar, so the learner must understand the meaning, not match identical words. A learner who only catches surface words should NOT be able to answer; only one who understands should.
 - MIX two types, at least 2 of each:
-  (mc)   multiple choice with EXACTLY 3 options A/B/C, exactly one correct, plausible distractors based on the dialogue.
-  (fill) completion: a sentence with a "____" gap that the learner fills from what they heard. The answer MUST be the EXACT word(s) spoken in the transcript so it can be auto-graded. Keep answers short (1-3 words), IELTS-style.
-- Questions must be answerable ONLY by listening (do not require reading the transcript). Spread answers across the dialogue, not all from one line.
+  (mc)   multiple choice with EXACTLY 3 options A/B/C, exactly one correct. Options are paraphrased (do NOT quote the transcript verbatim). Distractors must be tempting: things that WERE mentioned but answer a different point, plausible synonyms that are subtly wrong, or common misconceptions. Avoid distractors that are obviously off-topic.
+  (fill) sentence completion: a PARAPHRASED sentence with a "____" gap (IELTS sentence-completion style — the stem rephrases what was said, it is NOT a verbatim transcript line with a word removed). The word(s) that go in the gap MUST still be the EXACT word(s) spoken in the transcript so it can be auto-graded. Keep answers short (1-3 words).
+- Questions must be answerable ONLY by listening/understanding (do not require reading the transcript). Spread answers across the WHOLE dialogue (beginning, middle, end), not all from one line.
 
 For EACH question, ALSO provide (for the Vietnamese learner):
 - "vi": natural Vietnamese translation of the question.
@@ -161,7 +162,7 @@ export default async function handler(req, res) {
       const wordList = body.listen
         .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
         .join("\n");
-      const out = await callLLM(provider, SYS_LISTEN, "Study words:\n" + wordList, 6000);
+      const out = await callLLM(provider, SYS_LISTEN, "Study words:\n" + wordList, 8000);
       if (out.error) return res.status(502).json({ error: out.error });
       const j = out.json || {};
       return res.status(200).json({
@@ -176,7 +177,7 @@ export default async function handler(req, res) {
       if (!body.tts.length) return res.status(400).json({ error: "Thiếu lời thoại để đọc." });
       const total = body.tts.reduce((n, t) => n + (t && typeof t.text === "string" ? t.text.length : 0), 0);
       if (!total) return res.status(400).json({ error: "Lời thoại rỗng." });
-      if (total > 3000) return res.status(400).json({ error: "Đoạn hội thoại quá dài để tạo audio." });
+      if (total > 3500) return res.status(400).json({ error: "Đoạn hội thoại quá dài để tạo audio." });
       const out = await callGeminiTTS(body.tts);
       if (out.error) return res.status(502).json({ error: out.error });
       return res.status(200).json({ audio: out.audio, mime: out.mime });
