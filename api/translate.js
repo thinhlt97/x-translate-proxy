@@ -6,7 +6,7 @@
 //   1) Kéo tin: body { source: "handle" }                              -> { tweets:[{text,created_at,ts}] }  (ts: ms epoch|null)
 //   2) Dịch:    body { tweets:[...], provider:<provider> }             -> { tweets:[{sentences:[...]}] }
 //   3) Tạo đề:  body { quiz:[{word,...}], provider:<provider> }         -> { questions:[...] }
-//   5) Luyện nghe: body { listen:[{word,...}], provider:<provider> }    -> { title, transcript:[{speaker,text,vi}], questions:[...] }
+//   5) Luyện nghe: body { listen:[{word,...}], provider:<provider> }    -> { title, transcript:[{speaker,text,vi}], questions:[...5 mc A/B/C/D], dictation:[{text,answers,vi}] }
 //   6) TTS nghe:  body { tts:[{speaker,text}] }                         -> { audio:<base64 PCM>, mime }  (Gemini TTS đa giọng)
 //
 // Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY, TWITTERAPI_KEY.
@@ -65,34 +65,38 @@ Output JSON only.`;
 
 const SYS_LISTEN = `You design IELTS-style LISTENING practice for a Vietnamese learner.
 You receive a list of TARGET English words/phrases (the learner's study list).
-Produce: (1) ONE natural spoken DIALOGUE, and (2) IELTS-style questions about it.
+Produce THREE things: (1) ONE natural spoken DIALOGUE, (2) EXACTLY 5 multiple-choice comprehension questions, and (3) a DICTATION (gap-fill) section.
 
 DIALOGUE rules:
 - A natural conversation between EXACTLY TWO named speakers (e.g. "Tom" and "Anna"), like IELTS Listening Section 1 (everyday/social) or Section 3 (a study/work discussion).
-- About 260-360 words total, split into short alternating turns. Realistic, flowing spoken English (contractions, follow-up questions, small reactions, mild digressions). Long enough to support 8-10 spread-out questions.
+- About 260-360 words total, split into short alternating turns. Realistic, flowing spoken English (contractions, follow-up questions, small reactions, mild digressions). Keep this length — the audio duration must stay the same.
 - Weave in EVERY word from the study list naturally — the words may appear anywhere in any turn, in any grammatical form. Do NOT force them awkwardly or list them.
 - The dialogue is meant to be HEARD (text-to-speech), so keep sentences speakable.
 
-QUESTION rules — create 8-10 questions, ALL in ENGLISH, that test comprehension of MEANING (not word-spotting):
-- CRITICAL — PARAPHRASE like real IELTS: the question stem must NOT reuse the wording of the transcript. Re-express the idea with SYNONYMS and different grammar, so the learner must understand the meaning, not match identical words. A learner who only catches surface words should NOT be able to answer; only one who understands should.
-- MIX two types, at least 2 of each:
-  (mc)   multiple choice with EXACTLY 3 options A/B/C, exactly one correct. Options are paraphrased (do NOT quote the transcript verbatim). Distractors must be tempting: things that WERE mentioned but answer a different point, plausible synonyms that are subtly wrong, or common misconceptions. Avoid distractors that are obviously off-topic.
-  (fill) sentence completion: a PARAPHRASED sentence with a "____" gap (IELTS sentence-completion style — the stem rephrases what was said, it is NOT a verbatim transcript line with a word removed). The word(s) that go in the gap MUST still be the EXACT word(s) spoken in the transcript so it can be auto-graded. Keep answers short (1-3 words).
-- Questions must be answerable ONLY by listening/understanding (do not require reading the transcript). Spread answers across the WHOLE dialogue (beginning, middle, end), not all from one line.
+(2) MULTIPLE-CHOICE questions — EXACTLY 5, ALL in ENGLISH, testing comprehension of MEANING:
+- EACH has EXACTLY 4 options A/B/C/D, exactly one correct.
+- CRITICAL — the correct answer and the options MUST NOT be the target study words themselves, and must NOT simply repeat wording from the transcript. Test whether the learner UNDERSTOOD the conversation (a speaker's intention, reason, feeling, a detail, a conclusion, what happens next), NOT whether they can spot a vocabulary word. A learner who only recognises the study words should NOT be able to guess the answer.
+- PARAPHRASE like real IELTS: re-express ideas with synonyms and different grammar in both stem and options.
+- Distractors MUST be tempting and easy to confuse (IELTS trap style): things that WERE mentioned but answer a different question, half-true statements, plausible numbers/names/reasons that were said about something else, or common misunderstandings of the audio. Avoid distractors that are obviously off-topic or absurd.
+- Spread the 5 questions across the WHOLE dialogue (beginning, middle, end).
+- For each: "vi" (Vietnamese translation of the question), "explain" (short Vietnamese explanation why the answer is correct), "evidence" (the exact transcript sentence that proves it).
 
-For EACH question, ALSO provide (for the Vietnamese learner):
-- "vi": natural Vietnamese translation of the question.
-- "explain": short Vietnamese explanation of why the answer is correct (1-2 sentences).
-- "evidence": the exact sentence/turn from the transcript that proves the answer.
+(3) DICTATION — 5 to 6 short items:
+- Each item is ONE sentence taken VERBATIM from the transcript, with 1-3 CONTENT words removed and shown as "____" (four underscores) in the "text".
+- Prefer removing the TARGET study words (so the learner practises spelling them by ear); also remove other meaningful content words. Do NOT blank trivial words like "the", "a", "is".
+- The removed words in "answers" MUST be the EXACT words from the transcript, in the SAME ORDER as the "____" gaps, so they can be auto-graded.
+- Provide "vi": natural Vietnamese translation of the full (un-gapped) sentence.
 
 Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 {"title":"<short English scenario title>",
  "transcript":[{"speaker":"<name>","text":"<the spoken line, verbatim>","vi":"<natural Vietnamese translation>"}],
  "questions":[
-   {"type":"mc","q":"<question>","options":["<A>","<B>","<C>"],"correct":<0-2>,"vi":"<dịch>","explain":"<giải thích tiếng Việt>","evidence":"<câu gốc trong transcript>"},
-   {"type":"fill","q":"<sentence with ____ gap>","answer":"<exact word(s) from transcript>","accept":["<acceptable variant>"],"limit":"<e.g. ONE WORD / NO MORE THAN TWO WORDS>","vi":"<dịch>","explain":"<giải thích tiếng Việt>","evidence":"<câu gốc trong transcript>"}
+   {"type":"mc","q":"<question>","options":["<A>","<B>","<C>","<D>"],"correct":<0-3>,"vi":"<dịch>","explain":"<giải thích tiếng Việt>","evidence":"<câu gốc trong transcript>"}
+ ],
+ "dictation":[
+   {"text":"<a transcript sentence with ____ where words are removed>","answers":["<exact removed word 1>","<exact removed word 2>"],"vi":"<dịch cả câu>"}
  ]}
-Output JSON only.`;
+There MUST be exactly 5 objects in "questions" and 5-6 objects in "dictation". Output JSON only.`;
 
 const SYS_DEFINE = `You are an English-Vietnamese dictionary for a Vietnamese learner who follows football/soccer news.
 You receive ONE English word or short phrase. Explain it for the learner IN VIETNAMESE.
@@ -169,6 +173,7 @@ export default async function handler(req, res) {
         title: typeof j.title === "string" ? j.title : "",
         transcript: Array.isArray(j.transcript) ? j.transcript : [],
         questions: Array.isArray(j.questions) ? j.questions : [],
+        dictation: Array.isArray(j.dictation) ? j.dictation : [],
       });
     }
 
