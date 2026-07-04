@@ -29,12 +29,16 @@ You will receive SEVERAL tweets, each marked "TWEET 1:", "TWEET 2:", etc.
 For EACH tweet, break it into sentences and translate.
 Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 {"tweets":[
-  {"sentences":[{"en":"<English sentence verbatim>","vi":"<natural Vietnamese translation>","vocab":[{"word":"<word/phrase>","ipa":"<IPA pronunciation, e.g. /ˈmedɪkl/>","pos":"<từ loại tiếng Việt>","meaning_vi":"<nghĩa tiếng Việt>","note":"<ghi chú ngữ cảnh hoặc rỗng>"}]}]}
+  {"sentences":[{"en":"<English sentence verbatim>","vi":"<natural Vietnamese translation>","vocab":[{"word":"<word/phrase>","ipa":"<IPA pronunciation, e.g. /ˈmedɪkl/>","pos":"<từ loại tiếng Việt>","meaning_vi":"<nghĩa tiếng Việt TRONG CÂU NÀY>","note":"<ghi chú ngữ cảnh hoặc rỗng>","other_meanings":[{"pos":"<từ loại tiếng Việt>","meaning_vi":"<một nghĩa KHÁC của từ>","collocations":"<1-3 cụm từ / collocation tiếng Anh phổ biến ở nghĩa này, cách nhau bằng dấu phẩy>"}]}]}]}
 ]}
 The "tweets" array MUST have exactly one entry per input tweet, in the SAME order.
 Keep each English sentence verbatim. ALWAYS include the "ipa" field for every vocab item (IPA in slashes).
 Prioritise football jargon, idioms, phrasal verbs, transfer-market terms.
-2-5 vocab items per sentence. Vietnamese must be fluent and natural. Output JSON only.`;
+2-5 vocab items per sentence. Vietnamese must be fluent and natural.
+
+"meaning_vi" is the meaning of the word AS USED IN THIS SENTENCE.
+"other_meanings" lists OTHER common meanings of the same word that DIFFER from the in-sentence meaning, ordered from MOST common to LEAST common. For each: its part of speech, a short Vietnamese meaning, and a few common English collocations/phrases for that sense. Include AT MOST 3, and keep them concise. If the word has no other common meaning (e.g. a proper noun or a term with a single sense), use an empty array [].
+Output JSON only.`;
 
 const SYS_QUIZ = `You create CHALLENGING English vocabulary quizzes for Vietnamese learners.
 You receive a list of TARGET English words/phrases (the learner's study list) with their meanings.
