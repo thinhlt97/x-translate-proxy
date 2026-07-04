@@ -53,6 +53,8 @@ Across the 10 questions you MUST use a MIX of the formats below. NO single forma
   (E) ODD ONE OUT / WRONG USAGE (about 1-2): e.g. 'In which sentence is "X" used INCORRECTLY?' or 'Which option is NOT a correct synonym of "X"?'.
 When a question targets a specific study word, name it in quotes inside the question text (e.g. the word "strip").
 
+WORD FORM — you do NOT have to keep the exact form given in the study list. Freely INFLECT or derive the word so it fits the sentence naturally: verb tense/aspect (-ing, -ed, third-person -s, past participle), noun plural, comparative/superlative, adverb, or a common derived form (e.g. study word "tackle" may appear as "tackling"/"tackled"; "goal" as "goals"). When you quote the word, you may quote either the base form or the inflected form you actually used. This applies to the target word AND to distractors.
+
 CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
 - All 4 options must be PLAUSIBLE and of the SAME kind (all real English words of the same part of speech, OR all full grammatical sentences). The learner must NOT be able to find the answer just by spotting "the only familiar word" or "the only real word".
 - Use OTHER words from the study list as the wrong options whenever possible. If a question targets word X, use other study-list words — or close real synonyms / same football-domain terms — as the 3 distractors.
@@ -78,7 +80,7 @@ Produce THREE things: (1) ONE natural spoken DIALOGUE, (2) EXACTLY 5 multiple-ch
 DIALOGUE rules:
 - A natural conversation between EXACTLY TWO named speakers (e.g. "Tom" and "Anna"), like IELTS Listening Section 1 (everyday/social) or Section 3 (a study/work discussion).
 - About 260-360 words total, split into short alternating turns. Realistic, flowing spoken English (contractions, follow-up questions, small reactions, mild digressions). Keep this length — the audio duration must stay the same.
-- Weave in EVERY word from the study list naturally — the words may appear anywhere in any turn, in any grammatical form. Do NOT force them awkwardly or list them.
+- Weave in EVERY word from the study list naturally — the words may appear anywhere in any turn, in ANY grammatical form (inflected: -ing, -ed, plural, changed tense/number, or a common derived form). You need NOT keep the exact form given; prefer whatever form sounds natural. Do NOT force them awkwardly or list them.
 - The dialogue is meant to be HEARD (text-to-speech), so keep sentences speakable.
 
 (2) MULTIPLE-CHOICE questions — EXACTLY 5, ALL in ENGLISH, testing comprehension of MEANING:
@@ -92,7 +94,7 @@ DIALOGUE rules:
 (3) DICTATION — 5 to 6 short items:
 - Each item is ONE sentence taken VERBATIM from the transcript, with 1-3 CONTENT words removed and shown as "____" (four underscores) in the "text".
 - Prefer removing the TARGET study words (so the learner practises spelling them by ear); also remove other meaningful content words. Do NOT blank trivial words like "the", "a", "is".
-- The removed words in "answers" MUST be the EXACT words from the transcript, in the SAME ORDER as the "____" gaps, so they can be auto-graded.
+- The removed words in "answers" MUST be the EXACT words AS THEY APPEAR in the transcript (keep their inflected form there, e.g. "tackled", "goals"), in the SAME ORDER as the "____" gaps, so they can be auto-graded. The learner spells back exactly what is heard — a study word blanked in an inflected form is graded in that form.
 - Provide "vi": natural Vietnamese translation of the full (un-gapped) sentence.
 
 Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
