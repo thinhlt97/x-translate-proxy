@@ -29,14 +29,14 @@ You will receive SEVERAL tweets, each marked "TWEET 1:", "TWEET 2:", etc.
 For EACH tweet, break it into sentences and translate.
 Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 {"tweets":[
-  {"sentences":[{"en":"<English sentence verbatim>","vi":"<natural Vietnamese translation>","vocab":[{"word":"<word/phrase>","ipa":"<IPA pronunciation, e.g. /ˈmedɪkl/>","pos":"<từ loại tiếng Việt>","meaning_vi":"<nghĩa tiếng Việt TRONG CÂU NÀY>","note":"<ghi chú ngữ cảnh hoặc rỗng>","other_meanings":[{"pos":"<từ loại tiếng Việt>","meaning_vi":"<một nghĩa KHÁC của từ>","collocations":"<1-3 cụm từ / collocation tiếng Anh phổ biến ở nghĩa này, cách nhau bằng dấu phẩy>"}]}]}]}
+  {"sentences":[{"en":"<English sentence verbatim>","vi":"<natural Vietnamese translation>","vocab":[{"word":"<word/phrase>","ipa":"<IPA pronunciation, e.g. /ˈmedɪkl/>","pos":"<từ loại tiếng Việt>","meaning_vi":"<nghĩa tiếng Việt TRONG CÂU NÀY>","note":"<ghi chú ngữ cảnh hoặc rỗng>","collocations":"<2-4 collocation tiếng Anh phổ biến cho nghĩa TRONG CÂU, cách nhau bằng dấu phẩy, hoặc rỗng>","other_meanings":[{"pos":"<từ loại tiếng Việt>","meaning_vi":"<một nghĩa KHÁC của từ>","collocations":"<1-3 cụm từ / collocation tiếng Anh phổ biến ở nghĩa này, cách nhau bằng dấu phẩy>"}]}]}]}
 ]}
 The "tweets" array MUST have exactly one entry per input tweet, in the SAME order.
 Keep each English sentence verbatim. ALWAYS include the "ipa" field for every vocab item (IPA in slashes).
 Prioritise football jargon, idioms, phrasal verbs, transfer-market terms.
 2-5 vocab items per sentence. Vietnamese must be fluent and natural.
 
-"meaning_vi" is the meaning of the word AS USED IN THIS SENTENCE.
+"meaning_vi" is the meaning of the word AS USED IN THIS SENTENCE. "collocations" are common English collocations/phrases for THAT in-sentence meaning (comma-separated; "" if none).
 "other_meanings" lists OTHER common meanings of the same word that DIFFER from the in-sentence meaning, ordered from MOST common to LEAST common. For each: its part of speech, a short Vietnamese meaning, and a few common English collocations/phrases for that sense. Include AT MOST 3, and keep them concise. If the word has no other common meaning (e.g. a proper noun or a term with a single sense), use an empty array [].
 Output JSON only.`;
 
@@ -115,6 +115,14 @@ Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 Give 1-3 senses, most common first. If the word is common in football, add the football-specific sense.
 ALWAYS include "ipa". Vietnamese must be fluent and natural. Output JSON only.`;
 
+const SYS_ENRICH = `You enrich a Vietnamese learner's saved English vocabulary. You receive a LIST of English words/phrases; each comes with the ONE meaning the learner already saved (the meaning they met it in).
+For EACH item, return:
+- "collocations": 2-4 common English collocations/phrases for THAT saved meaning, comma-separated (e.g. for "medical" meaning y tế: "medical examination, pass a medical, medical staff"). If it is a proper noun or has essentially no collocations, use "".
+- "other_meanings": the word's OTHER common meanings that DIFFER from the saved meaning, ordered from MOST common to LEAST common. For EACH: "pos" (từ loại tiếng Việt: danh từ / động từ / tính từ ...), "meaning_vi" (a short, clear Vietnamese meaning), "collocations" (2-4 common English collocations for THAT sense, comma-separated). Include AT MOST 3. If the word genuinely has no other common meaning (proper noun, single-sense term), use [].
+Do NOT repeat the saved meaning inside "other_meanings". Keep Vietnamese natural and concise.
+Return ONLY valid JSON (no markdown, no preamble): {"items":[{"word":"<same word verbatim>","collocations":"<...>","other_meanings":[{"pos":"...","meaning_vi":"...","collocations":"..."}]}]}
+The "items" array MUST have exactly one entry per input word, in the SAME order. Output JSON only.`;
+
 const ALLOWED_ORIGINS = [
   "https://my-x-news.thinhlt1069-xnews.workers.dev",
   "http://localhost:8788",
@@ -177,6 +185,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ questions: Array.isArray(out.json.questions) ? out.json.questions : [] });
     }
 
+    // ===== 3b) BỔ SUNG NGHĨA KHÁC + COLLOCATION cho từ đã lưu =====
+    if (Array.isArray(body.enrich)) {
+      if (!body.enrich.length) return res.status(400).json({ error: "Danh sách từ rỗng." });
+      if (body.enrich.length > 20) return res.status(400).json({ error: "Tối đa 20 từ mỗi lần." });
+      const list = body.enrich
+        .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — saved meaning: " + v.meaning_vi : ""}`)
+        .join("\n");
+      const out = await callLLM(provider, SYS_ENRICH, "Words:\n" + list, 8000);
+      if (out.error) return res.status(502).json({ error: out.error });
+      return res.status(200).json({ items: Array.isArray(out.json.items) ? out.json.items : [] });
+    }
+
     // ===== 5) LUYỆN NGHE (tạo hội thoại + câu hỏi kiểu IELTS) =====
     if (Array.isArray(body.listen)) {
       if (!body.listen.length) return res.status(400).json({ error: "Danh sách từ vựng rỗng." });
@@ -211,7 +231,7 @@ export default async function handler(req, res) {
       const single = body.text;
       tweets = (single && typeof single === "string") ? [single] : null;
     }
-    if (!tweets || !tweets.length) return res.status(400).json({ error: "Thiếu 'source', 'tweets', hoặc 'quiz'." });
+    if (!tweets || !tweets.length) return res.status(400).json({ error: "Thiếu 'source', 'tweets', 'quiz', 'enrich'..." });
     if (tweets.length > 12) return res.status(400).json({ error: "Tối đa 12 tweet mỗi lần." });
     if (tweets.join("").length > 8000) return res.status(400).json({ error: "Tổng nội dung quá dài." });
 
