@@ -55,6 +55,10 @@ CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
 - NEVER use nonsense or obviously unrelated filler as options.
 - Exactly one correct option. VARY the position of the correct answer (not always the same letter).
 
+REVIEW WORDS (optional) — you may ALSO receive a separate REVIEW list of words the learner studied earlier and should be reminded of.
+- Weave these REVIEW words into the quiz naturally: use them INSIDE question sentences (as context words in fill-in-the-blank / usage / definition items) and especially as the WRONG answer options (distractors). Try to make each review word appear at least once across the 10 questions.
+- Do NOT dedicate a question to testing a REVIEW word (the 10 questions still TARGET the study list) and do NOT reveal or mark which words are review words. If there is no REVIEW list, ignore this section.
+
 For EACH question also provide, FOR THE VIETNAMESE LEARNER, written IN VIETNAMESE:
 - "vi": a natural Vietnamese translation of the question. Translate the question stem; if the question or the correct option is a full English sentence, translate that sentence too so the learner understands its meaning.
 - "explain": a short Vietnamese explanation of WHY the correct option is right — what the target word means here and, briefly, why the other options are wrong (wrong meaning / wrong usage / not a synonym). Keep it 1-3 sentences, concrete.
@@ -155,7 +159,16 @@ export default async function handler(req, res) {
       const wordList = body.quiz
         .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
         .join("\n");
-      const out = await callLLM(provider, SYS_QUIZ, "Study list:\n" + wordList, 8000);
+      let quizMsg = "Study list:\n" + wordList;
+      // Từ "nhắc lại" (lấy từ tab Đã ôn) — lồng vào câu hỏi/đáp án, KHÔNG ra câu hỏi riêng cho chúng.
+      const remind = Array.isArray(body.remind) ? body.remind.filter(v => v && v.word) : [];
+      if (remind.length) {
+        const remindList = remind
+          .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
+          .join("\n");
+        quizMsg += "\n\nReview list (weave these in as reminders / distractors; do NOT dedicate questions to them):\n" + remindList;
+      }
+      const out = await callLLM(provider, SYS_QUIZ, quizMsg, 8000);
       if (out.error) return res.status(502).json({ error: out.error });
       return res.status(200).json({ questions: Array.isArray(out.json.questions) ? out.json.questions : [] });
     }
