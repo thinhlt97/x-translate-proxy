@@ -62,8 +62,10 @@ CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
 - Exactly one correct option. VARY the position of the correct answer (not always the same letter).
 
 REVIEW WORDS (optional) — you may ALSO receive a separate REVIEW list of words the learner studied earlier and should be reminded of.
-- Weave these REVIEW words into the quiz naturally: use them INSIDE question sentences (as context words in fill-in-the-blank / usage / definition items) and especially as the WRONG answer options (distractors). Try to make each review word appear at least once across the 10 questions.
-- Do NOT dedicate a question to testing a REVIEW word (the 10 questions still TARGET the study list) and do NOT reveal or mark which words are review words. If there is no REVIEW list, ignore this section.
+- Reuse these REVIEW words HEAVILY so the learner keeps meeting them: put them INSIDE question sentences (as context words in fill-in-the-blank / usage / definition / correct-usage items) AND use them as the WRONG answer options (distractors). A single question may reuse several review words at once — e.g. 3 of the 4 options can be review words.
+- Aim to use MOST of the review words you are given, and make each review word that you use appear at least once across the 10 questions. Spread them across many questions, not all in one.
+- HARD CONSTRAINT: naturalness wins over quantity. Only place a review word where it genuinely fits the sentence/option grammatically and in meaning. NEVER force a review word into a sentence where it reads awkwardly or makes the sentence nonsensical, and never let review words turn an option into an implausible distractor. It is fine to leave a review word unused if it cannot be placed naturally.
+- Do NOT dedicate a whole question to testing a REVIEW word (the 10 questions still TARGET the study list) and do NOT reveal or mark which words are review words. If there is no REVIEW list, ignore this section.
 
 For EACH question also provide, FOR THE VIETNAMESE LEARNER, written IN VIETNAMESE:
 - "vi": a natural Vietnamese translation of the question. Translate the question stem; if the question or the correct option is a full English sentence, translate that sentence too so the learner understands its meaning.
