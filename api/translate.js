@@ -42,38 +42,67 @@ Output JSON only.`;
 
 const SYS_QUIZ = `You create CHALLENGING English vocabulary quizzes for Vietnamese learners.
 You receive a list of TARGET English words/phrases (the learner's study list) with their meanings.
-Create EXACTLY 10 multiple-choice questions. EVERYTHING in ENGLISH ONLY.
+Create EXACTLY 10 multiple-choice questions, each with EXACTLY 5 options (A/B/C/D/E). EVERYTHING in ENGLISH ONLY.
 
 VARIETY IS MANDATORY — do NOT make the quiz monotonous. The learner is bored of quizzes that are all fill-in-the-blank.
 Across the 10 questions you MUST use a MIX of the formats below. NO single format may be used for more than 3 of the 10 questions. Aim for roughly this spread:
-  (A) DEFINITION -> WORD (about 2): give an English definition/description, the 4 options are candidate words; pick the one that matches.
-  (B) FILL-IN-THE-BLANK (at most 2-3): a football sentence with a gap "____"; all 4 options fit grammatically but only one fits the meaning.
-  (C) CORRECT USAGE (about 2): ask e.g. 'Which sentence uses "X" correctly?' — give 4 full sentences, only ONE uses the target word X correctly (others misuse it: wrong meaning, wrong collocation, or wrong part of speech).
-  (D) CLOSEST IN MEANING (about 1-2): 'Which word/phrase is closest in meaning to "X"?' — 4 real words, one is the best synonym.
+  (A) DEFINITION -> WORD (about 2): give an English definition/description, the 5 options are candidate words; pick the one that matches.
+  (B) FILL-IN-THE-BLANK (at most 2-3): a football sentence with a gap "____"; all 5 options fit grammatically but only one fits the meaning.
+  (C) CORRECT USAGE (about 2): ask e.g. 'Which sentence uses "X" correctly?' — give 5 full sentences, only ONE uses the target word X correctly (others misuse it: wrong meaning, wrong collocation, or wrong part of speech).
+  (D) CLOSEST IN MEANING (about 1-2): 'Which word/phrase is closest in meaning to "X"?' — 5 real words, one is the best synonym.
   (E) ODD ONE OUT / WRONG USAGE (about 1-2): e.g. 'In which sentence is "X" used INCORRECTLY?' or 'Which option is NOT a correct synonym of "X"?'.
 When a question targets a specific study word, name it in quotes inside the question text (e.g. the word "strip").
 
-WORD FORM — you do NOT have to keep the exact form given in the study list. Freely INFLECT or derive the word so it fits the sentence naturally: verb tense/aspect (-ing, -ed, third-person -s, past participle), noun plural, comparative/superlative, adverb, or a common derived form (e.g. study word "tackle" may appear as "tackling"/"tackled"; "goal" as "goals"). When you quote the word, you may quote either the base form or the inflected form you actually used. This applies to the target word AND to distractors.
+WORD FORM — the form given in the study list is only a LABEL for the word family. NEVER feel bound to it. Use whatever form makes the sentence natural, and deliberately VARY the form across the 10 questions:
+- INFLECTIONS: verb tense/aspect (-ing, -ed, -s, past participle), noun plural, comparative/superlative.
+- DERIVED FORMS across parts of speech, in EITHER direction. A study-list adjective may be tested as its noun or adverb; a verb as its noun / agent noun / adjective; a noun as its verb or adjective. Examples: "aggressive" -> "aggression"/"aggressively"; "sign" -> "signing"/"signature"/"signed"; "creative" -> "creativity"/"creatively"; "decide" -> "decision"/"decisive"/"decisively"; "strength" -> "strengthen"/"strong".
+- A question may test a derived form directly (e.g. define the noun "aggression" while the study word was "aggressive"), as long as the tested word clearly belongs to the same word family. When you quote the word in the question, quote the FORM YOU ACTUALLY USED.
+- This applies to the target word AND to distractors AND to review words.
+
+MEANING COVERAGE — a study word may come with SEVERAL meanings (shown after "meanings:" separated by " | "; a word can be a verb in one sense and a noun in another).
+- For each word, pick ONE of its meanings AT RANDOM as the meaning the question actually tests — do NOT always default to the first meaning listed. Across the 10 questions, spread the choices so different words test different senses (some first sense, some a later sense).
+- Test the chosen sense honestly: the correct option and the question context must match THAT sense, not another one.
+- A different sense of the SAME word makes an excellent distractor (e.g. test "strip" = take off, and offer a sentence using "strip" = narrow piece of land as a wrong option). Use this trick when it fits.
 
 CRITICAL DIFFICULTY RULES — the quiz must be hard to guess:
-- All 4 options must be PLAUSIBLE and of the SAME kind (all real English words of the same part of speech, OR all full grammatical sentences). The learner must NOT be able to find the answer just by spotting "the only familiar word" or "the only real word".
-- Use OTHER words from the study list as the wrong options whenever possible. If a question targets word X, use other study-list words — or close real synonyms / same football-domain terms — as the 3 distractors.
-- NEVER use nonsense or obviously unrelated filler as options.
-- Exactly one correct option. VARY the position of the correct answer (not always the same letter).
+- All 5 options must be PLAUSIBLE and of the SAME kind (all real English words of the same part of speech, OR all full grammatical sentences). The learner must NOT be able to find the answer just by spotting "the only familiar word" or "the only real word".
+- Use OTHER words from the study list as the wrong options whenever possible. If a question targets word X, use other study-list words — or close real synonyms / same football-domain terms — as the 4 distractors.
+- NEVER use nonsense or obviously unrelated filler as options. Never pad to 5 options with a weak throwaway option — if you cannot invent 5 strong options for an idea, choose a different question idea.
+- Exactly one correct option. VARY the position of the correct answer across all 5 letters (not always the same letter, and do not avoid E).
 
 REVIEW WORDS (optional) — you may ALSO receive a separate REVIEW list of words the learner studied earlier and should be reminded of.
-- Reuse these REVIEW words HEAVILY so the learner keeps meeting them: put them INSIDE question sentences (as context words in fill-in-the-blank / usage / definition / correct-usage items) AND use them as the WRONG answer options (distractors). A single question may reuse several review words at once — e.g. 3 of the 4 options can be review words.
+- Reuse these REVIEW words HEAVILY so the learner keeps meeting them: put them INSIDE question sentences (as context words in fill-in-the-blank / usage / definition / correct-usage items) AND use them as the WRONG answer options (distractors). Having 5 options gives you MORE distractor slots — fill them with review words. A single question may reuse several review words at once — e.g. 4 of the 5 options can be review words.
 - Aim to use MOST of the review words you are given, and make each review word that you use appear at least once across the 10 questions. Spread them across many questions, not all in one.
+- Review words may also appear in any inflected/derived form and in any of their meanings.
 - HARD CONSTRAINT: naturalness wins over quantity. Only place a review word where it genuinely fits the sentence/option grammatically and in meaning. NEVER force a review word into a sentence where it reads awkwardly or makes the sentence nonsensical, and never let review words turn an option into an implausible distractor. It is fine to leave a review word unused if it cannot be placed naturally.
 - Do NOT dedicate a whole question to testing a REVIEW word (the 10 questions still TARGET the study list) and do NOT reveal or mark which words are review words. If there is no REVIEW list, ignore this section.
 
 For EACH question also provide, FOR THE VIETNAMESE LEARNER, written IN VIETNAMESE:
 - "vi": a natural Vietnamese translation of the question. Translate the question stem; if the question or the correct option is a full English sentence, translate that sentence too so the learner understands its meaning.
-- "explain": a short Vietnamese explanation of WHY the correct option is right — what the target word means here and, briefly, why the other options are wrong (wrong meaning / wrong usage / not a synonym). Keep it 1-3 sentences, concrete.
-(These two fields are the ONLY Vietnamese in the output; the question and all 4 options stay English-only.)
+- "explain": a short Vietnamese explanation of WHY the correct option is right — what the target word means here (state the sense being tested, and the word form used if it differs from the study list) and, briefly, why the other options are wrong (wrong meaning / wrong usage / not a synonym). Keep it 1-3 sentences, concrete.
+(These two fields are the ONLY Vietnamese in the output; the question and all 5 options stay English-only.)
 
-Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":<0-3>,"vi":"<dịch tiếng Việt>","explain":"<giải thích tiếng Việt>"}]}
+Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D","E"],"correct":<0-4>,"vi":"<dịch tiếng Việt>","explain":"<giải thích tiếng Việt>"}]}
+Every "options" array MUST have exactly 5 items and "correct" MUST be 0..4.
 Output JSON only.`;
+
+// Một dòng mô tả từ cho đề ôn tập: gộp nghĩa chính + các nghĩa khác để model tự bốc nghĩa ra đề.
+// Ví dụ: `strip (v.) — meanings: cởi (áo) | (n.) dải đất hẹp | (n.) áo đấu`
+function fmtQuizWord(v) {
+  const senses = [];
+  if (v.meaning_vi) senses.push((v.pos ? `(${v.pos}) ` : "") + v.meaning_vi);
+  (Array.isArray(v.other_meanings) ? v.other_meanings : []).forEach((o) => {
+    if (o && o.meaning_vi) senses.push((o.pos ? `(${o.pos}) ` : "") + o.meaning_vi);
+  });
+  return v.word + (senses.length ? " — meanings: " + senses.join(" | ") : "");
+}
+
+// Bỏ câu hỏi hỏng (thiếu phương án / correct trỏ ra ngoài) thay vì để frontend hiện câu vô nghĩa.
+function validQuizQuestion(q) {
+  return q && typeof q.question === "string" && q.question.trim()
+    && Array.isArray(q.options) && q.options.length >= 3 && q.options.length <= 5
+    && Number.isInteger(q.correct) && q.correct >= 0 && q.correct < q.options.length;
+}
 
 const SYS_LISTEN = `You design IELTS-style LISTENING practice for a Vietnamese learner.
 You receive a list of TARGET English words/phrases (the learner's study list).
@@ -172,21 +201,19 @@ export default async function handler(req, res) {
     // ===== 3) TẠO ĐỀ =====
     if (Array.isArray(body.quiz)) {
       if (!body.quiz.length) return res.status(400).json({ error: "Danh sách từ vựng rỗng." });
-      const wordList = body.quiz
-        .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
-        .join("\n");
+      const wordList = body.quiz.map((v, i) => `${i + 1}. ${fmtQuizWord(v)}`).join("\n");
       let quizMsg = "Study list:\n" + wordList;
       // Từ "nhắc lại" (lấy từ tab Đã ôn) — lồng vào câu hỏi/đáp án, KHÔNG ra câu hỏi riêng cho chúng.
       const remind = Array.isArray(body.remind) ? body.remind.filter(v => v && v.word) : [];
       if (remind.length) {
-        const remindList = remind
-          .map((v, i) => `${i + 1}. ${v.word}${v.meaning_vi ? " — meaning: " + v.meaning_vi : ""}`)
-          .join("\n");
+        const remindList = remind.map((v, i) => `${i + 1}. ${fmtQuizWord(v)}`).join("\n");
         quizMsg += "\n\nReview list (weave these in as reminders / distractors; do NOT dedicate questions to them):\n" + remindList;
       }
-      const out = await callLLM(provider, SYS_QUIZ, quizMsg, 8000);
+      const out = await callLLM(provider, SYS_QUIZ, quizMsg, 10000);
       if (out.error) return res.status(502).json({ error: out.error });
-      return res.status(200).json({ questions: Array.isArray(out.json.questions) ? out.json.questions : [] });
+      const questions = (Array.isArray(out.json.questions) ? out.json.questions : []).filter(validQuizQuestion);
+      if (!questions.length) return res.status(502).json({ error: "Model trả về đề không hợp lệ. Thử lại." });
+      return res.status(200).json({ questions });
     }
 
     // ===== 3b) BỔ SUNG NGHĨA KHÁC + COLLOCATION cho từ đã lưu =====

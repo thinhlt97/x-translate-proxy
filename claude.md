@@ -71,8 +71,13 @@ Tất cả là `POST` JSON. Phân nhánh theo trường có trong body:
 
 **Tạo đề ôn tập:**
 ```
-→ { "quiz": [ { "word","ipa","pos","meaning_vi" } ], "provider": "gemini"|"groq" }
-← { "questions": [ { "question", "options": ["A","B","C","D"], "correct": 0..3 } ] }
+→ { "quiz": [ { "word","ipa","pos","meaning_vi","other_meanings":[{ "pos","meaning_vi" }] } ], "remind": [ {...} ], "provider": <provider> }
+← { "questions": [ { "question", "options": ["A","B","C","D","E"], "correct": 0..4, "vi","explain" } ] }
+// 10 câu, mỗi câu 5 phương án. Mỗi từ gửi kèm MỌI nghĩa (fmtQuizWord ghép thành "word — meanings: (v.) x | (n.) y")
+// → LLM bốc ngẫu nhiên một nghĩa để ra đề, được dùng nghĩa khác của chính từ đó làm distractor,
+//   và được ra đề ở bất kỳ dạng thức nào cùng họ từ (chia thì, số nhiều, phái sinh khác từ loại: adj↔noun↔adverb).
+// "remind" = 8-12 từ đã ôn, lồng ngầm vào câu hỏi/đáp án (ưu tiên làm distractor), không ra câu hỏi riêng.
+// validQuizQuestion lọc bỏ câu hỏng (options 3-5, correct trong khoảng); rỗng hết → 502.
 ```
 
 **vocab-worker** (endpoint riêng, query `?code=MA`):
