@@ -184,6 +184,25 @@ export default async function handler(req, res) {
       return res.status(200).json({ tweets: tw.tweets });
     }
 
+    // ===== 1b) DANH SÁCH ĐANG THEO DÕI (để dựng bảng tin như X) =====
+    // body { followings: "handle", cursor?: "" } -> { users:[...], next_cursor, has_next_page }
+    if (typeof body.followings === "string") {
+      const handle = body.followings.trim().replace(/^@/, "");
+      if (!/^[A-Za-z0-9_]{1,30}$/.test(handle)) return res.status(400).json({ error: "Tên tài khoản không hợp lệ." });
+      const out = await fetchFollowings(handle, typeof body.cursor === "string" ? body.cursor : "");
+      if (out.error) return res.status(502).json({ error: out.error });
+      return res.status(200).json(out);
+    }
+
+    // ===== 1c) BẢNG TIN (trộn tweet của nhiều tài khoản, có phân trang để cuộn) =====
+    // body { feed: { groups:[{handles:[...], cursor:""}], mode?: "search"|"user", win?: 24, rt?: true } }
+    //   -> { tweets:[<tweet đầy đủ, sort mới->cũ>], groups:[{cursor, hasMore}] }
+    if (body.feed && typeof body.feed === "object") {
+      const out = await fetchFeed(body.feed);
+      if (out.error) return res.status(502).json({ error: out.error });
+      return res.status(200).json(out);
+    }
+
     // ===== 4) TRA TỪ ĐIỂN (nghĩa tiếng Việt + ví dụ) =====
     if (typeof body.define === "string") {
       const word = body.define.trim().slice(0, 80);
@@ -432,4 +451,175 @@ async function fetchSource(handle) {
     tweets.push({ text, created_at: created, ts: isNaN(t) ? null : t });   // ts: mốc thời gian (ms) để frontend lọc 6/12/24h
   }
   return { tweets };
+}
+
+// ===================== BẢNG TIN KIỂU X =====================
+// Không có API nào cho phép đọc feed "For You" thật (X không mở, twitterapi.io cũng không có).
+// Ta dựng lại tab "Đang theo dõi": lấy danh sách following (công khai) rồi trộn tweet của họ theo thời gian.
+
+const TAPI = "https://api.twitterapi.io/twitter";
+
+async function tapi(path, params) {
+  const key = process.env.TWITTERAPI_KEY;
+  if (!key) return { error: "Chưa đặt TWITTERAPI_KEY trên Vercel." };
+  const qs = new URLSearchParams(params).toString();
+  const r = await fetch(TAPI + path + (qs ? "?" + qs : ""), { headers: { "x-api-key": key } });
+  if (!r.ok) { const d = await r.text(); return { error: "twitterapi " + r.status + ": " + d.slice(0, 300) }; }
+  const j = await r.json();
+  if (j && j.error && j.code !== 0) return { error: "twitterapi: " + (j.message || j.error) };
+  return { json: j };
+}
+
+// Danh sách tài khoản mà "handle" đang theo dõi (công khai — không cần đăng nhập).
+async function fetchFollowings(handle, cursor) {
+  const out = await tapi("/user/followings", { userName: handle, pageSize: 200, cursor: cursor || "" });
+  if (out.error) return { error: out.error };
+  const j = out.json || {};
+  const raw = j.followings || j.users || j?.data?.followings || [];
+  const users = raw.map(u => ({
+    userName: u.userName || u.screen_name || "",
+    name: u.name || "",
+    avatar: (u.profilePicture || u.profile_image_url_https || "").replace("_normal.", "_x96."),
+    description: (u.description || "").slice(0, 160),
+    followers: u.followers || u.followers_count || 0,
+    verified: !!(u.isBlueVerified || u.verified),
+  })).filter(u => u.userName);
+  return { users, next_cursor: j.next_cursor || "", has_next_page: !!j.has_next_page };
+}
+
+// Ảnh/video kèm theo tweet (API trả ở extendedEntities, đôi khi ở entities).
+function mediaOf(tw) {
+  const arr = tw?.extendedEntities?.media || tw?.extended_entities?.media || tw?.entities?.media || [];
+  const out = [];
+  for (const m of arr) {
+    const type = m.type === "animated_gif" ? "gif" : (m.type || "photo");
+    if (type === "video" || type === "gif") {
+      const vars = (m.video_info?.variants || []).filter(v => v.content_type === "video/mp4");
+      vars.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      out.push({ type, url: vars[0]?.url || "", poster: m.media_url_https || m.media_url || "" });
+    } else {
+      out.push({ type: "photo", url: m.media_url_https || m.media_url || "", poster: "" });
+    }
+  }
+  return out.filter(m => m.url || m.poster);
+}
+
+function authorOf(tw) {
+  const a = tw?.author || {};
+  return {
+    userName: a.userName || a.screen_name || "",
+    name: a.name || "",
+    avatar: (a.profilePicture || a.profile_image_url_https || "").replace("_normal.", "_x96."),
+    verified: !!(a.isBlueVerified || a.verified),
+  };
+}
+
+function cleanText(s) {
+  return String(s || "").replace(/https:\/\/t\.co\/\w+/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// Chuẩn hóa 1 tweet cho bảng tin. Retweet: lấy NỘI DUNG của tweet gốc, ghi nhận ai đã đăng lại (rtBy).
+function normTweet(tw) {
+  if (!tw) return null;
+  const isRT = !!tw.retweeted_tweet;
+  const rtBy = isRT ? authorOf(tw) : null;
+  const core = isRT ? tw.retweeted_tweet : tw;
+  const t = Date.parse(core.createdAt || core.created_at || tw.createdAt || "");
+  const text = cleanText(core.text || core.full_text || "");
+  const q = core.quoted_tweet;
+  if (!text && !mediaOf(core).length) return null;
+  return {
+    id: core.id || tw.id || "",
+    url: core.url || (core.author?.userName && core.id ? `https://x.com/${core.author.userName}/status/${core.id}` : ""),
+    text,
+    ts: isNaN(t) ? null : t,
+    author: authorOf(core),
+    rtBy,                                   // null nếu không phải retweet
+    media: mediaOf(core),
+    likes: core.likeCount || 0,
+    retweets: core.retweetCount || 0,
+    replies: core.replyCount || 0,
+    views: core.viewCount || 0,
+    quote: q ? { author: authorOf(q), text: cleanText(q.text || q.full_text || ""), media: mediaOf(q) } : null,
+  };
+}
+
+function tweetsOf(j) {
+  return j?.tweets || j?.data?.tweets || j?.data || [];
+}
+
+// Một "nhóm" = tối đa ~20 handle gộp trong 1 truy vấn tìm kiếm (X giới hạn độ dài query).
+// mode "search": 1 lần gọi trả 20 tweet ĐÃ TRỘN của cả nhóm -> rẻ, hợp với cuộn tải thêm.
+// mode "user":   mỗi handle 1 lần gọi (chắc chắn có retweet) -> tốn credit hơn.
+async function fetchGroup(group, mode, sinceTs, withRT) {
+  const handles = (group.handles || []).filter(h => /^[A-Za-z0-9_]{1,30}$/.test(h)).slice(0, 25);
+  if (!handles.length) return { tweets: [], cursor: "", hasMore: false };
+
+  if (mode === "user") {
+    const cursors = group.cursors || {};
+    const results = await Promise.all(handles.map(async h => {
+      const out = await tapi("/user/last_tweets", { userName: h, cursor: cursors[h] || "" });
+      if (out.error) return { h, tweets: [], cursor: "", hasMore: false };
+      const j = out.json || {};
+      return { h, tweets: tweetsOf(j), cursor: j.next_cursor || "", hasMore: !!j.has_next_page };
+    }));
+    const tweets = [];
+    const nextCursors = {};
+    let hasMore = false;
+    for (const r of results) {
+      nextCursors[r.h] = r.cursor;
+      if (r.hasMore) hasMore = true;
+      for (const tw of r.tweets) {
+        if (tw.isReply || tw.inReplyToId) continue;
+        const n = normTweet(tw);
+        if (n && (!sinceTs || !n.ts || n.ts >= sinceTs)) tweets.push(n);
+      }
+    }
+    return { tweets, cursors: nextCursors, hasMore };
+  }
+
+  const q = "(" + handles.map(h => "from:" + h).join(" OR ") + ") -filter:replies"
+          + (withRT ? " include:nativeretweets" : "")
+          + (sinceTs ? " since_time:" + Math.floor(sinceTs / 1000) : "");
+  const out = await tapi("/tweet/advanced_search", { query: q, queryType: "Latest", cursor: group.cursor || "" });
+  if (out.error) return { tweets: [], cursor: "", hasMore: false, error: out.error };
+  const j = out.json || {};
+  const tweets = [];
+  for (const tw of tweetsOf(j)) {
+    if (tw.isReply || tw.inReplyToId) continue;
+    const n = normTweet(tw);
+    if (n) tweets.push(n);
+  }
+  return { tweets, cursor: j.next_cursor || "", hasMore: !!j.has_next_page };
+}
+
+// Bảng tin: gọi song song từng nhóm, trộn tất cả rồi sắp mới -> cũ.
+async function fetchFeed(feed) {
+  const key = process.env.TWITTERAPI_KEY;
+  if (!key) return { error: "Chưa đặt TWITTERAPI_KEY trên Vercel." };
+  const groups = Array.isArray(feed.groups) ? feed.groups.slice(0, 12) : [];
+  if (!groups.length) return { error: "Chưa chọn tài khoản nào cho bảng tin." };
+  const mode = feed.mode === "user" ? "user" : "search";
+  const withRT = feed.rt !== false;
+  const win = Math.min(Math.max(Number(feed.win) || 24, 1), 168);
+  const sinceTs = Date.now() - win * 3600 * 1000;
+
+  const results = await Promise.all(groups.map(g => fetchGroup(g, mode, sinceTs, withRT)));
+  const err = results.find(r => r.error);
+  if (err && results.every(r => !r.tweets.length)) return { error: err.error };
+
+  const seen = new Set();
+  const tweets = [];
+  for (const r of results) {
+    for (const tw of r.tweets) {
+      if (tw.id && seen.has(tw.id)) continue;
+      if (tw.id) seen.add(tw.id);
+      tweets.push(tw);
+    }
+  }
+  tweets.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return {
+    tweets,
+    groups: results.map(r => ({ cursor: r.cursor || "", cursors: r.cursors || null, hasMore: !!r.hasMore })),
+  };
 }
