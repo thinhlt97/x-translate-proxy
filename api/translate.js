@@ -597,7 +597,7 @@ async function fetchGroup(group, mode, sinceTs, withRT) {
 async function fetchFeed(feed) {
   const key = process.env.TWITTERAPI_KEY;
   if (!key) return { error: "Chưa đặt TWITTERAPI_KEY trên Vercel." };
-  const groups = Array.isArray(feed.groups) ? feed.groups.slice(0, 12) : [];
+  const groups = Array.isArray(feed.groups) ? feed.groups.slice(0, 16) : [];   // 16 nhóm × 15 handle = 240 tài khoản
   if (!groups.length) return { error: "Chưa chọn tài khoản nào cho bảng tin." };
   const mode = feed.mode === "user" ? "user" : "search";
   const withRT = feed.rt !== false;
