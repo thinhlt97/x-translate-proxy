@@ -8,6 +8,7 @@
 //   3) Tạo đề:  body { quiz:[{word,...}], provider:<provider> }         -> { questions:[...] }
 //   5) Luyện nghe: body { listen:[{word,...}], provider:<provider> }    -> { title, transcript:[{speaker,text,vi}], questions:[...5 mc A/B/C/D], dictation:[{text,answers,vi}] }
 //   6) TTS nghe:  body { tts:[{speaker,text}] }                         -> { audio:<base64 PCM>, mime }  (Gemini TTS đa giọng)
+//   7) Xếp hạng gợi ý: body { rank:{ profile:{follows:[...]}, tweets:[{id,text,author}] }, provider } -> { scores:[{id,score}] }
 //
 // Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY, TWITTERAPI_KEY.
 
@@ -148,6 +149,18 @@ Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 Give 1-3 senses, most common first. If the word is common in football, add the football-specific sense.
 ALWAYS include "ipa". Vietnamese must be fluent and natural. Output JSON only.`;
 
+const SYS_RANK = `You are a personalisation engine for a football/soccer news reader.
+You receive TWO things:
+(1) a list of X/Twitter accounts a specific user FOLLOWS — this DEFINES their interests (which clubs, leagues, players, journalists, competitions and topics they care about);
+(2) a list of CANDIDATE tweets from accounts the user does NOT follow.
+Score EACH candidate tweet from 0 to 10 for how likely THIS user would want to see it in their feed, judged by topical overlap with what they follow:
+- HIGH (7-10): same clubs / leagues / players / competitions / topics the user follows; substantive news, analysis, transfer updates, match talk.
+- MEDIUM (4-6): adjacent football content but not clearly on the user's specific interests.
+- LOW (0-3): off-topic, unrelated sports/news, spam, giveaways/promotions, engagement-bait, generic filler, or non-English noise.
+Judge ONLY from the tweet text and its topic. Do NOT reward a tweet just for being popular.
+Return ONLY valid JSON (no markdown, no preamble): {"scores":[{"id":"<the tweet id verbatim>","score":<integer 0-10>}]}
+Include EXACTLY one entry for every candidate tweet, using the SAME id given. Output JSON only.`;
+
 const SYS_ENRICH = `You enrich a Vietnamese learner's saved English vocabulary. You receive a LIST of English words/phrases; each comes with the ONE meaning the learner already saved (the meaning they met it in).
 For EACH item, return:
 - "collocations": 2-4 common English collocations/phrases for THAT saved meaning, comma-separated (e.g. for "medical" meaning y tế: "medical examination, pass a medical, medical staff"). If it is a proper noun or has essentially no collocations, use "".
@@ -201,6 +214,27 @@ export default async function handler(req, res) {
       const out = await fetchFeed(body.feed);
       if (out.error) return res.status(502).json({ error: out.error });
       return res.status(200).json(out);
+    }
+
+    // ===== 1d) XẾP HẠNG TIN GỢI Ý (kênh chưa theo dõi) theo sở thích người dùng =====
+    // body { rank: { profile:{follows:[...]}, tweets:[{id,text,author:{userName}}] }, provider } -> { scores:[{id,score}] }
+    if (body.rank && typeof body.rank === "object") {
+      const r = body.rank;
+      const tweets = (Array.isArray(r.tweets) ? r.tweets : []).filter(t => t && t.id != null).slice(0, 50);
+      if (!tweets.length) return res.status(200).json({ scores: [] });
+      const follows = (Array.isArray(r.profile && r.profile.follows) ? r.profile.follows : []).slice(0, 60);
+      const profileMsg = follows.length
+        ? "The user FOLLOWS these X accounts (this reflects their interests):\n" + follows.map(f => "- " + String(f).slice(0, 120)).join("\n")
+        : "The user follows football/soccer news accounts.";
+      const tweetsMsg = tweets.map(t =>
+        `[${t.id}] @${(t.author && t.author.userName) || "?"}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 240)}`
+      ).join("\n");
+      const out = await callLLM(provider, SYS_RANK,
+        profileMsg + "\n\nScore each candidate tweet 0-10 for how likely this user is interested in it.\nCANDIDATE TWEETS:\n" + tweetsMsg,
+        2500);
+      if (out.error) return res.status(502).json({ error: out.error });
+      const scores = Array.isArray(out.json && out.json.scores) ? out.json.scores : [];
+      return res.status(200).json({ scores });
     }
 
     // ===== 4) TRA TỪ ĐIỂN (nghĩa tiếng Việt + ví dụ) =====
