@@ -8,7 +8,8 @@
 //   3) Tạo đề:  body { quiz:[{word,...}], provider:<provider> }         -> { questions:[...] }
 //   5) Luyện nghe: body { listen:[{word,...}], provider:<provider> }    -> { title, transcript:[{speaker,text,vi}], questions:[...5 mc A/B/C/D], dictation:[{text,answers,vi}] }
 //   6) TTS nghe:  body { tts:[{speaker,text}] }                         -> { audio:<base64 PCM>, mime }  (Gemini TTS đa giọng)
-//   7) Xếp hạng gợi ý: body { rank:{ profile:{follows:[...]}, tweets:[{id,text,author}] }, provider } -> { scores:[{id,score}] }
+//   7) Xếp hạng gợi ý: body { rank:{ profile:{topics,follows,emerging}, tweets:[{id,text,author}] }, provider } -> { scores:[{id,score,topic}] }
+//   8) Hồ sơ sở thích: body { interest:{ topics:[label...], reads:[text...] }, provider } -> { weights, keywords, emerging }
 //
 // Biến môi trường trên Vercel: GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY, TWITTERAPI_KEY.
 
@@ -149,17 +150,24 @@ Return ONLY valid JSON (no markdown, no preamble) with this exact shape:
 Give 1-3 senses, most common first. If the word is common in football, add the football-specific sense.
 ALWAYS include "ipa". Vietnamese must be fluent and natural. Output JSON only.`;
 
-const SYS_RANK = `You are a personalisation engine for a football/soccer news reader.
-You receive TWO things:
-(1) a list of X/Twitter accounts a specific user FOLLOWS — this DEFINES their interests (which clubs, leagues, players, journalists, competitions and topics they care about);
+const SYS_RANK = `You are a personalisation engine for a MULTI-TOPIC X/Twitter news reader (topics can be football, technology, jobs/careers, world news, business/finance, science, etc.).
+You receive:
+(1) the user's INTEREST PROFILE — a set of TOPICS they care about, each with a weight (0..1; higher = more interested) and optional keywords; optionally also some accounts they follow and some free-text emerging interests.
 (2) a list of CANDIDATE tweets from accounts the user does NOT follow.
-Score EACH candidate tweet from 0 to 10 for how likely THIS user would want to see it in their feed, judged by topical overlap with what they follow:
-- HIGH (7-10): same clubs / leagues / players / competitions / topics the user follows; substantive news, analysis, transfer updates, match talk.
-- MEDIUM (4-6): adjacent football content but not clearly on the user's specific interests.
-- LOW (0-3): off-topic, unrelated sports/news, spam, giveaways/promotions, engagement-bait, generic filler, or non-English noise.
-Judge ONLY from the tweet text and its topic. Do NOT reward a tweet just for being popular.
-Return ONLY valid JSON (no markdown, no preamble): {"scores":[{"id":"<the tweet id verbatim>","score":<integer 0-10>}]}
+For EACH candidate tweet return:
+- "score" (integer 0-10): how likely THIS user wants to see it. A tweet strongly matching a HIGH-weight topic (or their keywords / emerging interests) scores high; a tweet on a low-weight or unlisted topic scores lower; spam, giveaways, promotions, engagement-bait, ads, or non-English noise score 0-3. Judge ONLY from the tweet's text and topic — do NOT reward a tweet just for being popular.
+- "topic": classify the tweet into EXACTLY ONE of the user's topic LABELS given in the profile, or "khác" if it fits none of them. Use the labels verbatim.
+Return ONLY valid JSON (no markdown, no preamble): {"scores":[{"id":"<the tweet id verbatim>","score":<0-10>,"topic":"<one given label or 'khác'>"}]}
 Include EXACTLY one entry for every candidate tweet, using the SAME id given. Output JSON only.`;
+
+const SYS_INTEREST = `You infer a user's TOPIC INTERESTS from what they spend time READING in a news feed.
+You receive: (1) a list of TOPIC LABELS the user selected; (2) a sample of tweet texts the user spent time reading (dwelled on).
+Return, for the SELECTED topics ONLY:
+- "weights": an object mapping EACH selected label -> a number 0..1 reflecting how much of the user's reading matches that topic. Base it on the reading sample. They need NOT sum to 1. A topic with clearly more matching reading gets a higher value; a topic with little/no matching reading gets a low value (but keep it >0 unless truly absent).
+- "keywords": an object mapping EACH selected label -> up to 6 short English keywords/phrases capturing what the user actually reads within that topic (draw from the sample when possible; [] if unknown).
+- "emerging": up to 4 SHORT free-text interest tags that the reading reveals but that are NOT covered by any selected label (e.g. a specific club, company, or subject). May be [].
+Return ONLY valid JSON (no markdown, no preamble): {"weights":{"<label>":0.0},"keywords":{"<label>":["..."]},"emerging":["..."]}
+Use the selected labels VERBATIM as keys. Output JSON only.`;
 
 const SYS_ENRICH = `You enrich a Vietnamese learner's saved English vocabulary. You receive a LIST of English words/phrases; each comes with the ONE meaning the learner already saved (the meaning they met it in).
 For EACH item, return:
@@ -217,24 +225,56 @@ export default async function handler(req, res) {
     }
 
     // ===== 1d) XẾP HẠNG TIN GỢI Ý (kênh chưa theo dõi) theo sở thích người dùng =====
-    // body { rank: { profile:{follows:[...]}, tweets:[{id,text,author:{userName}}] }, provider } -> { scores:[{id,score}] }
+    // body { rank: { profile:{topics:[{name,weight,keywords}], follows:[...], emerging:[...] }, tweets:[{id,text,author:{userName}}] }, provider }
+    //   -> { scores:[{id,score,topic}] }
     if (body.rank && typeof body.rank === "object") {
       const r = body.rank;
       const tweets = (Array.isArray(r.tweets) ? r.tweets : []).filter(t => t && t.id != null).slice(0, 50);
       if (!tweets.length) return res.status(200).json({ scores: [] });
-      const follows = (Array.isArray(r.profile && r.profile.follows) ? r.profile.follows : []).slice(0, 60);
-      const profileMsg = follows.length
-        ? "The user FOLLOWS these X accounts (this reflects their interests):\n" + follows.map(f => "- " + String(f).slice(0, 120)).join("\n")
-        : "The user follows football/soccer news accounts.";
+      const prof = r.profile || {};
+      const topics = (Array.isArray(prof.topics) ? prof.topics : []).slice(0, 12);
+      const follows = (Array.isArray(prof.follows) ? prof.follows : []).slice(0, 40);
+      const emerging = (Array.isArray(prof.emerging) ? prof.emerging : []).slice(0, 8);
+      const topicsMsg = topics.length
+        ? "INTEREST TOPICS (label — weight — keywords):\n" + topics.map(t => {
+            const w = Number(t.weight); const kw = Array.isArray(t.keywords) ? t.keywords.slice(0, 8).join(", ") : "";
+            return `- ${t.name} — ${isNaN(w) ? "?" : w.toFixed(2)}${kw ? " — " + kw : ""}`;
+          }).join("\n")
+        : "";
+      const followsMsg = follows.length ? "Also follows: " + follows.map(f => String(f).slice(0, 100)).join("; ") : "";
+      const emergingMsg = emerging.length ? "Emerging interests: " + emerging.map(String).join(", ") : "";
+      const profileMsg = [topicsMsg, followsMsg, emergingMsg].filter(Boolean).join("\n\n")
+        || "The user reads general news (football, technology, world news).";
       const tweetsMsg = tweets.map(t =>
         `[${t.id}] @${(t.author && t.author.userName) || "?"}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 240)}`
       ).join("\n");
       const out = await callLLM(provider, SYS_RANK,
-        profileMsg + "\n\nScore each candidate tweet 0-10 for how likely this user is interested in it.\nCANDIDATE TWEETS:\n" + tweetsMsg,
-        2500);
+        profileMsg + "\n\nScore (0-10) and tag the topic of each candidate tweet for this user.\nCANDIDATE TWEETS:\n" + tweetsMsg,
+        3000);
       if (out.error) return res.status(502).json({ error: out.error });
       const scores = Array.isArray(out.json && out.json.scores) ? out.json.scores : [];
       return res.status(200).json({ scores });
+    }
+
+    // ===== 1e) HỒ SƠ SỞ THÍCH (suy ra trọng số chủ đề từ tin user ĐỌC LÂU) =====
+    // body { interest: { topics:[label...], reads:[text...] }, provider } -> { weights:{label:0..1}, keywords:{label:[...]}, emerging:[...] }
+    if (body.interest && typeof body.interest === "object") {
+      const it = body.interest;
+      const labels = (Array.isArray(it.topics) ? it.topics : []).map(String).map(s => s.slice(0, 60)).slice(0, 12);
+      if (!labels.length) return res.status(400).json({ error: "Thiếu danh sách chủ đề." });
+      const reads = (Array.isArray(it.reads) ? it.reads : []).slice(0, 120)
+        .map(s => String(s || "").replace(/\s+/g, " ").slice(0, 180)).filter(Boolean);
+      const msg = "SELECTED TOPICS:\n" + labels.map(l => "- " + l).join("\n")
+        + "\n\nTWEETS THE USER SPENT TIME READING:\n"
+        + (reads.length ? reads.map((t, i) => `${i + 1}. ${t}`).join("\n") : "(none yet)");
+      const out = await callLLM(provider, SYS_INTEREST, msg, 1500);
+      if (out.error) return res.status(502).json({ error: out.error });
+      const j = out.json || {};
+      return res.status(200).json({
+        weights: (j.weights && typeof j.weights === "object") ? j.weights : {},
+        keywords: (j.keywords && typeof j.keywords === "object") ? j.keywords : {},
+        emerging: Array.isArray(j.emerging) ? j.emerging : [],
+      });
     }
 
     // ===== 4) TRA TỪ ĐIỂN (nghĩa tiếng Việt + ví dụ) =====
